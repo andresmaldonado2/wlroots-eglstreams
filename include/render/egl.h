@@ -60,4 +60,6 @@ void wlr_egl_save_context(struct wlr_egl_context *context);
  */
 bool wlr_egl_restore_context(struct wlr_egl_context *context);
 
+bool wlr_egl_try_to_acquire_stream(struct wlr_egl *egl,
+	EGLStreamKHR stream, const EGLAttrib *attrib_list);
 #endif

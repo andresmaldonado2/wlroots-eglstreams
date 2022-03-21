@@ -12,6 +12,7 @@
 #include "types/wlr_output.h"
 #include "util/global.h"
 #include "util/signal.h"
+#include "backend/drm/drm.h"
 
 #define OUTPUT_VERSION 4
 
