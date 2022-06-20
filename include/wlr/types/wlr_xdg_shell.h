@@ -17,6 +17,7 @@
 
 struct wlr_xdg_shell {
 	struct wl_global *global;
+	uint32_t version;
 	struct wl_list clients;
 	struct wl_list popup_grabs;
 	uint32_t ping_timeout;
@@ -68,7 +69,21 @@ struct wlr_xdg_positioner {
 	struct wl_resource *resource;
 	struct wlr_xdg_positioner_rules rules;
 };
+struct wlr_xdg_popup_state {
+	// Position of the popup relative to the upper left corner of
+	// the window geometry of the parent surface
+	struct wlr_box geometry;
 
+	bool reactive;
+};
+
+struct wlr_xdg_popup_configure {
+	struct wlr_box geometry;
+	struct wlr_xdg_positioner_rules rules;
+
+	bool has_reposition_token;
+	uint32_t reposition_token;
+};
 struct wlr_xdg_popup {
 	struct wlr_xdg_surface *base;
 	struct wl_list link;
@@ -78,12 +93,10 @@ struct wlr_xdg_popup {
 	struct wlr_surface *parent;
 	struct wlr_seat *seat;
 
-	// Position of the popup relative to the upper left corner of the window
-	// geometry of the parent surface
-	struct wlr_box geometry;
+	struct wlr_xdg_popup_configure scheduled;
 
-	struct wlr_xdg_positioner_rules positioner_rules;
-
+	struct wlr_xdg_popup_state current, pending;
+	
 	struct wl_list grab_link; // wlr_xdg_popup_grab::popups
 };
 
@@ -255,7 +268,7 @@ struct wlr_xdg_toplevel_show_window_menu_event {
 	uint32_t x, y;
 };
 
-struct wlr_xdg_shell *wlr_xdg_shell_create(struct wl_display *display);
+struct wlr_xdg_shell *wlr_xdg_shell_create(struct wl_display *display, uint32_t version);
 
 /** Get the corresponding wlr_xdg_surface from a resource.
  *

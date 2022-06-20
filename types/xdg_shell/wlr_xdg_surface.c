@@ -146,10 +146,10 @@ static void surface_send_configure(void *user_data) {
 		break;
 	case WLR_XDG_SURFACE_ROLE_POPUP:
 		xdg_popup_send_configure(surface->popup->resource,
-			surface->popup->geometry.x,
-			surface->popup->geometry.y,
-			surface->popup->geometry.width,
-			surface->popup->geometry.height);
+			surface->popup->current.geometry.x,
+			surface->popup->current.geometry.y,
+			surface->popup->current.geometry.width,
+			surface->popup->current.geometry.height);
 		break;
 	}
 
@@ -469,9 +469,9 @@ void wlr_xdg_popup_get_position(struct wlr_xdg_popup *popup,
 		wlr_xdg_surface_from_wlr_surface(popup->parent);
 	struct wlr_box parent_geo;
 	wlr_xdg_surface_get_geometry(parent, &parent_geo);
-	*popup_sx = parent_geo.x + popup->geometry.x -
+	*popup_sx = parent_geo.x + popup->current.geometry.x -
 		popup->base->current.geometry.x;
-	*popup_sy = parent_geo.y + popup->geometry.y -
+	*popup_sy = parent_geo.y + popup->current.geometry.y -
 		popup->base->current.geometry.y;
 }
 

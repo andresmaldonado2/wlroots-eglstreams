@@ -3,7 +3,7 @@
 #include "types/wlr_xdg_shell.h"
 #include "util/signal.h"
 
-#define WM_BASE_VERSION 2
+#define WM_BASE_VERSION 4
 
 static const struct xdg_wm_base_interface xdg_shell_impl;
 
@@ -137,13 +137,15 @@ static void handle_display_destroy(struct wl_listener *listener, void *data) {
 	free(xdg_shell);
 }
 
-struct wlr_xdg_shell *wlr_xdg_shell_create(struct wl_display *display) {
+struct wlr_xdg_shell *wlr_xdg_shell_create(struct wl_display *display, uint32_t version) {
+	assert(version <= WM_BASE_VERSION);
 	struct wlr_xdg_shell *xdg_shell =
 		calloc(1, sizeof(struct wlr_xdg_shell));
 	if (!xdg_shell) {
 		return NULL;
 	}
 
+	xdg_shell->version = version;
 	xdg_shell->ping_timeout = 10000;
 
 	wl_list_init(&xdg_shell->clients);

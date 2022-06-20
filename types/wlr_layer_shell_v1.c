@@ -556,8 +556,8 @@ void wlr_layer_surface_v1_for_each_popup_surface(struct wlr_layer_surface_v1 *su
 		}
 
 		double popup_sx, popup_sy;
-		popup_sx = popup->popup->geometry.x - popup->current.geometry.x;
-		popup_sy = popup->popup->geometry.y - popup->current.geometry.y;
+		popup_sx = popup->popup->current.geometry.x - popup->current.geometry.x;
+		popup_sy = popup->popup->current.geometry.y - popup->current.geometry.y;
 
 		struct layer_surface_iterator_data data = {
 			.user_iterator = iterator,
@@ -590,8 +590,8 @@ struct wlr_surface *wlr_layer_surface_v1_popup_surface_at(
 			continue;
 		}
 
-		double popup_sx = popup_state->geometry.x - popup->current.geometry.x;
-		double popup_sy = popup_state->geometry.y - popup->current.geometry.y;
+		double popup_sx = popup_state->current.geometry.x - popup->current.geometry.x;
+		double popup_sy = popup_state->current.geometry.y - popup->current.geometry.y;
 
 		struct wlr_surface *sub = wlr_xdg_surface_surface_at(popup,
 			sx - popup_sx,

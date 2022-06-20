@@ -348,10 +348,10 @@ void create_xdg_popup(struct wlr_xdg_surface *surface,
 
 	surface->role = WLR_XDG_SURFACE_ROLE_POPUP;
 
-	memcpy(&surface->popup->positioner_rules,
+	memcpy(&surface->popup->scheduled.rules,
 		&positioner->rules, sizeof(positioner->rules));
 	wlr_xdg_positioner_rules_get_geometry(
-		&positioner->rules, &surface->popup->geometry);
+		&positioner->rules, &surface->popup->current.geometry);
 
 	if (parent) {
 		surface->popup->parent = parent->surface;
@@ -417,8 +417,8 @@ void wlr_xdg_popup_get_toplevel_coords(struct wlr_xdg_popup *popup,
 			wlr_xdg_surface_from_wlr_surface(parent);
 
 		if (xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP) {
-			popup_sx += xdg_surface->popup->geometry.x;
-			popup_sy += xdg_surface->popup->geometry.y;
+			popup_sx += xdg_surface->popup->current.geometry.x;
+			popup_sy += xdg_surface->popup->current.geometry.y;
 			parent = xdg_surface->popup->parent;
 		} else {
 			popup_sx += xdg_surface->current.geometry.x;
@@ -443,6 +443,6 @@ void wlr_xdg_popup_unconstrain_from_box(struct wlr_xdg_popup *popup,
 		.width = toplevel_space_box->width,
 		.height = toplevel_space_box->height,
 	};
-	wlr_xdg_positioner_rules_unconstrain_box(&popup->positioner_rules,
-		&popup_constraint, &popup->geometry);
+	wlr_xdg_positioner_rules_unconstrain_box(&popup->scheduled.rules,
+		&popup_constraint, &popup->current.geometry);
 }
