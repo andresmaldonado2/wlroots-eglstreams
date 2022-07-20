@@ -5,6 +5,7 @@
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_drm.h>
+#include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_linux_dmabuf_v1.h>
 #include <wlr/util/log.h>
 #include "render/pixel_format.h"
@@ -202,6 +203,11 @@ struct wlr_buffer *wlr_buffer_from_resource(struct wl_resource *resource) {
 	assert(resource && wlr_resource_is_buffer(resource));
 
 	struct wlr_buffer *buffer;
+
+	// This is janky as hell, do this properly later once this works -Sora
+	struct wlr_surface *surface = wlr_surface_from_resource(resource);
+	// END JANK
+
 	if (wl_shm_buffer_get(resource) != NULL) {
 		struct wlr_shm_client_buffer *shm_client_buffer =
 			shm_client_buffer_get_or_create(resource);
@@ -218,7 +224,7 @@ struct wlr_buffer *wlr_buffer_from_resource(struct wl_resource *resource) {
 		struct wlr_drm_buffer *drm_buffer =
 			wlr_drm_buffer_from_resource(resource);
 		buffer = wlr_buffer_lock(&drm_buffer->base);
-	} else if ((buffer = wlr_buffer_from_wl_eglstream(renderer, resource, NULL))) {
+	} else if ((buffer = wlr_buffer_from_wl_eglstream(surface->renderer, resource, NULL))) {
 		buffer = wlr_buffer_lock(buffer);
 	} else {
 		const struct wlr_buffer_resource_interface *iface =

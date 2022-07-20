@@ -211,6 +211,14 @@ static struct wlr_buffer *allocator_create_buffer(
 	}
 	return &buffer->base;
 }
+
+// EVEN MORE JANK -Sora
+static struct wlr_buffer *jank_allocator_create_buffer(struct wlr_allocator *wlr_alloc, int width, int height,
+		const struct wlr_drm_format *format) {
+			return allocator_create_buffer(wlr_alloc, width, height, format, NULL);
+		}
+// END EXTREME JANK -Sora
+
 void wlr_eglstream_dispose_planes(struct wlr_allocator *wlr_alloc) {
 	wlr_log(WLR_INFO, "Disposing eglstream planes...");
 	struct wlr_eglstreams_allocator *alloc =
@@ -244,5 +252,5 @@ void wlr_eglstream_recreate_planes(struct wlr_allocator *wlr_alloc) {
 
 static const struct wlr_allocator_interface allocator_impl = {
 	.destroy = allocator_destroy,
-	.create_buffer = allocator_create_buffer,
+	.create_buffer = jank_allocator_create_buffer,
 };

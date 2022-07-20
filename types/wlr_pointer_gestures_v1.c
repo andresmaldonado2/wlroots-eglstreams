@@ -293,7 +293,6 @@ void wlr_pointer_gestures_v1_send_hold_begin(
 		uint32_t time_msec,
 		uint32_t fingers) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	struct wlr_surface *focus = seat->pointer_state.focused_surface;
 	struct wlr_seat_client *focus_seat_client =
 		seat->pointer_state.focused_client;
 	if (focus == NULL || focus_seat_client == NULL) {

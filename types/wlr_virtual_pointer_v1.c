@@ -106,7 +106,6 @@ static void virtual_pointer_frame(struct wl_client *client,
 	if (pointer == NULL) {
 		return;
 	}
-	struct wlr_input_device *wlr_dev = &pointer->pointer.base;
 
 	for (size_t i = 0;
 			i < sizeof(pointer->axis_valid) / sizeof(pointer->axis_valid[0]);

@@ -305,6 +305,13 @@ struct wlr_scene_surface *wlr_scene_surface_create(struct wlr_scene_tree *parent
 struct wlr_scene_buffer *wlr_scene_buffer_from_node(struct wlr_scene_node *node);
 
 /**
+ * If this buffer is backed by a surface, then the struct wlr_scene_surface is
+ * returned. If not, NULL will be returned.
+ */
+struct wlr_scene_surface *wlr_scene_surface_from_buffer(
+	struct wlr_scene_buffer *scene_buffer);
+
+/**
  * Add a node displaying a solid-colored rectangle to the scene-graph.
  */
 struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,

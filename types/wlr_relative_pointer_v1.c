@@ -106,14 +106,9 @@ static void relative_pointer_manager_v1_handle_get_relative_pointer(struct wl_cl
 	struct wl_resource *relative_pointer_resource = wl_resource_create(client,
 		&zwp_relative_pointer_v1_interface, wl_resource_get_version(resource), id);
 	if (relative_pointer_resource == NULL) {
-		free(relative_pointer);
 		wl_client_post_no_memory(client);
 		return;
 	}
-
-	wlr_log(WLR_DEBUG, "relative_pointer_v1 %p created for client %p",
-		relative_pointer, client);
-
 
 	wl_resource_set_implementation(relative_pointer_resource, &relative_pointer_v1_impl,
 		NULL, relative_pointer_v1_handle_resource_destroy);
