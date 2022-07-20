@@ -20,8 +20,7 @@
 #include "render/eglstreams_allocator.h"
 #include "wayland-eglstream-controller-protocol.h"
 
-static enum wlr_log_importance egl_log_importance_to_wlr(EGLint type,
-		EGLint error) {
+static enum wlr_log_importance egl_log_importance_to_wlr(EGLint type) {
 	switch (type) {
 	case EGL_DEBUG_MSG_CRITICAL_KHR: return WLR_ERROR;
 	case EGL_DEBUG_MSG_ERROR_KHR:    return WLR_ERROR;
@@ -74,7 +73,7 @@ static void egl_log(EGLenum error, const char *command, EGLint msg_type,
 	if (error == EGL_BAD_STATE_KHR || error == EGL_BAD_STREAM_KHR) {
 		return;
 	}
-	_wlr_log(egl_log_importance_to_wlr(msg_type, error),
+	_wlr_log(egl_log_importance_to_wlr(msg_type),
 		"[EGL] command: %s, error: %s (0x%x), message: \"%s\"",
 		command, egl_error_str(error), error, msg);
 }

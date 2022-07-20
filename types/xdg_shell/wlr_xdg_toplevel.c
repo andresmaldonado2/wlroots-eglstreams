@@ -31,43 +31,30 @@ struct wlr_xdg_toplevel_configure *send_xdg_toplevel_configure(
 	}
 	*configure = toplevel->scheduled;
 
-	struct wl_array states;
-	wl_array_init(&states);
+	uint32_t version = wl_resource_get_version(toplevel->resource);
+
+	if ((configure->fields & WLR_XDG_TOPLEVEL_CONFIGURE_BOUNDS) &&
+			version >= XDG_TOPLEVEL_CONFIGURE_BOUNDS_SINCE_VERSION) {
+		xdg_toplevel_send_configure_bounds(toplevel->resource,
+			configure->bounds.width, configure->bounds.height);
+	}
+
+	size_t nstates = 0;
+	uint32_t states[32];
 	if (configure->maximized) {
-		uint32_t *s = wl_array_add(&states, sizeof(uint32_t));
-		if (!s) {
-			wlr_log(WLR_ERROR, "Could not allocate state for maximized xdg_toplevel");
-			goto error_out;
-		}
-		*s = XDG_TOPLEVEL_STATE_MAXIMIZED;
+		states[nstates++] = XDG_TOPLEVEL_STATE_MAXIMIZED;
 	}
 	if (configure->fullscreen) {
-		uint32_t *s = wl_array_add(&states, sizeof(uint32_t));
-		if (!s) {
-			wlr_log(WLR_ERROR, "Could not allocate state for fullscreen xdg_toplevel");
-			goto error_out;
-		}
-		*s = XDG_TOPLEVEL_STATE_FULLSCREEN;
+		states[nstates++] = XDG_TOPLEVEL_STATE_FULLSCREEN;
 	}
 	if (configure->resizing) {
-		uint32_t *s = wl_array_add(&states, sizeof(uint32_t));
-		if (!s) {
-			wlr_log(WLR_ERROR, "Could not allocate state for resizing xdg_toplevel");
-			goto error_out;
-		}
-		*s = XDG_TOPLEVEL_STATE_RESIZING;
+		states[nstates++] = XDG_TOPLEVEL_STATE_RESIZING;
 	}
 	if (configure->activated) {
-		uint32_t *s = wl_array_add(&states, sizeof(uint32_t));
-		if (!s) {
-			wlr_log(WLR_ERROR, "Could not allocate state for activated xdg_toplevel");
-			goto error_out;
-		}
-		*s = XDG_TOPLEVEL_STATE_ACTIVATED;
+		states[nstates++] = XDG_TOPLEVEL_STATE_ACTIVATED;
 	}
 	if (configure->tiled) {
-		if (wl_resource_get_version(toplevel->resource) >=
-				XDG_TOPLEVEL_STATE_TILED_LEFT_SINCE_VERSION) {
+		if (version >= XDG_TOPLEVEL_STATE_TILED_LEFT_SINCE_VERSION) {
 			const struct {
 				enum wlr_edges edge;
 				enum xdg_toplevel_state state;
@@ -82,40 +69,26 @@ struct wlr_xdg_toplevel_configure *send_xdg_toplevel_configure(
 				if ((configure->tiled & tiled[i].edge) == 0) {
 					continue;
 				}
-
-				uint32_t *s = wl_array_add(&states, sizeof(uint32_t));
-				if (!s) {
-					wlr_log(WLR_ERROR,
-						"Could not allocate state for tiled xdg_toplevel");
-					goto error_out;
-				}
-				*s = tiled[i].state;
+				states[nstates++] = tiled[i].state;
 			}
 		} else if (!configure->maximized) {
-			// This version doesn't support tiling, best we can do is make the
-			// toplevel maximized
-			uint32_t *s = wl_array_add(&states, sizeof(uint32_t));
-			if (!s) {
-				wlr_log(WLR_ERROR,
-					"Could not allocate state for maximized xdg_toplevel");
-				goto error_out;
-			}
-			*s = XDG_TOPLEVEL_STATE_MAXIMIZED;
+			states[nstates++] = XDG_TOPLEVEL_STATE_MAXIMIZED;
 		}
 	}
+	assert(nstates <= sizeof(states) / sizeof(states[0]));
 
 	uint32_t width = configure->width;
 	uint32_t height = configure->height;
-	xdg_toplevel_send_configure(toplevel->resource, width, height, &states);
+	struct wl_array wl_states = {
+		.size = nstates * sizeof(states[0]),
+		.data = states,
+	};
+	xdg_toplevel_send_configure(toplevel->resource,
+		width, height, &wl_states);
 
-	wl_array_release(&states);
+	toplevel->scheduled.fields = 0;
+
 	return configure;
-
-error_out:
-	wl_array_release(&states);
-	free(configure);
-	wl_resource_post_no_memory(toplevel->resource);
-	return NULL;
 }
 
 void handle_xdg_toplevel_committed(struct wlr_xdg_toplevel *toplevel) {
@@ -150,12 +123,14 @@ void wlr_xdg_toplevel_set_parent(struct wlr_xdg_toplevel *toplevel,
 	if (toplevel->parent) {
 		wl_list_remove(&toplevel->parent_unmap.link);
 	}
-	
-	toplevel->parent = parent;
-	if (parent) {
+
+	if (parent && parent->base->mapped) {
+		toplevel->parent = parent;
 		toplevel->parent_unmap.notify = handle_parent_unmap;
 		wl_signal_add(&toplevel->parent->base->events.unmap,
-				&toplevel->parent_unmap);
+			&toplevel->parent_unmap);
+	} else {
+		toplevel->parent = NULL;
 	}
 
 	wlr_signal_emit_safe(&toplevel->events.set_parent, NULL);
@@ -182,6 +157,7 @@ static void xdg_toplevel_handle_set_title(struct wl_client *client,
 
 	tmp = strdup(title);
 	if (tmp == NULL) {
+		wl_resource_post_no_memory(resource);
 		return;
 	}
 
@@ -198,6 +174,7 @@ static void xdg_toplevel_handle_set_app_id(struct wl_client *client,
 
 	tmp = strdup(app_id);
 	if (tmp == NULL) {
+		wl_resource_post_no_memory(resource);
 		return;
 	}
 
@@ -318,7 +295,6 @@ static void xdg_toplevel_handle_set_maximized(struct wl_client *client,
 		wlr_xdg_toplevel_from_resource(resource);
 	toplevel->requested.maximized = true;
 	wlr_signal_emit_safe(&toplevel->events.request_maximize, NULL);
-	wlr_xdg_surface_schedule_configure(toplevel->base);
 }
 
 static void xdg_toplevel_handle_unset_maximized(struct wl_client *client,
@@ -327,7 +303,6 @@ static void xdg_toplevel_handle_unset_maximized(struct wl_client *client,
 		wlr_xdg_toplevel_from_resource(resource);
 	toplevel->requested.maximized = false;
 	wlr_signal_emit_safe(&toplevel->events.request_maximize, NULL);
-	wlr_xdg_surface_schedule_configure(toplevel->base);
 }
 
 static void handle_fullscreen_output_destroy(struct wl_listener *listener,
@@ -367,7 +342,6 @@ static void xdg_toplevel_handle_set_fullscreen(struct wl_client *client,
 	store_fullscreen_requested(toplevel, true, output);
 
 	wlr_signal_emit_safe(&toplevel->events.request_fullscreen, NULL);
-	wlr_xdg_surface_schedule_configure(toplevel->base);
 }
 
 static void xdg_toplevel_handle_unset_fullscreen(struct wl_client *client,
@@ -378,7 +352,6 @@ static void xdg_toplevel_handle_unset_fullscreen(struct wl_client *client,
 	store_fullscreen_requested(toplevel, false, NULL);
 
 	wlr_signal_emit_safe(&toplevel->events.request_fullscreen, NULL);
-	wlr_xdg_surface_schedule_configure(toplevel->base);
 }
 
 static void xdg_toplevel_handle_set_minimized(struct wl_client *client,
@@ -535,6 +508,19 @@ uint32_t wlr_xdg_toplevel_set_resizing(struct wlr_xdg_toplevel *toplevel,
 
 uint32_t wlr_xdg_toplevel_set_tiled(struct wlr_xdg_toplevel *toplevel,
 		uint32_t tiled) {
+	assert(toplevel->base->client->shell->version >=
+		XDG_TOPLEVEL_STATE_TILED_LEFT_SINCE_VERSION);
 	toplevel->scheduled.tiled = tiled;
+	return wlr_xdg_surface_schedule_configure(toplevel->base);
+}
+
+uint32_t wlr_xdg_toplevel_set_bounds(struct wlr_xdg_toplevel *toplevel,
+		int32_t width, int32_t height) {
+	assert(toplevel->base->client->shell->version >=
+		XDG_TOPLEVEL_CONFIGURE_BOUNDS_SINCE_VERSION);
+	assert(width >= 0 && height >= 0);
+	toplevel->scheduled.fields |= WLR_XDG_TOPLEVEL_CONFIGURE_BOUNDS;
+	toplevel->scheduled.bounds.width = width;
+	toplevel->scheduled.bounds.height = height;
 	return wlr_xdg_surface_schedule_configure(toplevel->base);
 }

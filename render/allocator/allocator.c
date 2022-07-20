@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <wlr/config.h>
 #include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/render/allocator.h>
 #include <wlr/util/log.h>
@@ -11,15 +12,20 @@
 #include "backend/backend.h"
 #include "render/allocator/allocator.h"
 #include "render/allocator/drm_dumb.h"
-#include "render/allocator/gbm.h"
 #include "render/allocator/shm.h"
 #include "render/wlr_renderer.h"
 #include "backend/drm/drm.h"
 #include "render/eglstreams_allocator.h"
+#include "util/signal.h"
+
+#if WLR_HAS_GBM_ALLOCATOR
+#include "render/allocator/gbm.h"
+#endif
 
 void wlr_allocator_init(struct wlr_allocator *alloc,
 		const struct wlr_allocator_interface *impl, uint32_t buffer_caps) {
 	assert(impl && impl->destroy && impl->create_buffer);
+	memset(alloc, 0, sizeof(*alloc));
 	alloc->impl = impl;
 	alloc->buffer_caps = buffer_caps;
 	wl_signal_init(&alloc->events.destroy);
@@ -100,6 +106,8 @@ struct wlr_allocator *allocator_autocreate_with_drm_fd(
 	uint32_t renderer_caps = renderer_get_render_buffer_caps(renderer);
 
 	struct wlr_allocator *alloc = NULL;
+	
+#if WLR_HAS_GBM_ALLOCATOR
 	uint32_t gbm_caps = WLR_BUFFER_CAP_DMABUF;
 	if ((backend_caps & gbm_caps) && (renderer_caps & gbm_caps)
 			&& drm_fd >= 0) {
@@ -114,6 +122,7 @@ struct wlr_allocator *allocator_autocreate_with_drm_fd(
 		close(gbm_fd);
 		wlr_log(WLR_DEBUG, "Failed to create gbm allocator");
 	}
+#endif
 
 	uint32_t shm_caps = WLR_BUFFER_CAP_SHM | WLR_BUFFER_CAP_DATA_PTR;
 	if ((backend_caps & shm_caps) && (renderer_caps & shm_caps)) {
@@ -157,15 +166,14 @@ void wlr_allocator_destroy(struct wlr_allocator *alloc) {
 	if (alloc == NULL) {
 		return;
 	}
-	wl_signal_emit(&alloc->events.destroy, NULL);
+	wlr_signal_emit_safe(&alloc->events.destroy, NULL);
 	alloc->impl->destroy(alloc);
 }
 
 struct wlr_buffer *wlr_allocator_create_buffer(struct wlr_allocator *alloc,
-		int width, int height, const struct wlr_drm_format *format,
-		void *data) {
+		int width, int height, const struct wlr_drm_format *format) {
 	struct wlr_buffer *buffer =
-		alloc->impl->create_buffer(alloc, width, height, format, data);
+		alloc->impl->create_buffer(alloc, width, height, format);
 	if (buffer == NULL) {
 		return NULL;
 	}

@@ -113,14 +113,14 @@ static void virtual_pointer_frame(struct wl_client *client,
 			++i) {
 		if (pointer->axis_valid[i]) {
 			/* Deliver pending axis event */
-			wlr_signal_emit_safe(&wlr_dev->pointer->events.axis,
+			wlr_signal_emit_safe(&pointer->pointer.events.axis,
 					&pointer->axis_event[i]);
 			memset(&pointer->axis_event[i], 0, sizeof(pointer->axis_event[i]));
 			pointer->axis_valid[i] = false;
 		}
 	}
 
-	wlr_signal_emit_safe(&wlr_dev->pointer->events.frame, wlr_dev->pointer);
+	wlr_signal_emit_safe(&pointer->pointer.events.frame, &pointer->pointer);
 }
 
 static void virtual_pointer_axis_source(struct wl_client *client,

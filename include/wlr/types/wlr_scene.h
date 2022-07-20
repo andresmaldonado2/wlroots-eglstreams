@@ -22,16 +22,27 @@
 #include <pixman.h>
 #include <wayland-server-core.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_damage_ring.h>
 
 struct wlr_output;
 struct wlr_output_layout;
 struct wlr_xdg_surface;
 struct wlr_layer_surface_v1;
 
+struct wlr_scene_node;
+struct wlr_scene_buffer;
+
+typedef void (*wlr_scene_node_iterator_func_t)(struct wlr_scene_node *node,
+	int sx, int sy, void *data);
+
+typedef bool (*wlr_scene_buffer_point_accepts_input_func_t)(
+	struct wlr_scene_buffer *buffer, int sx, int sy);
+
+typedef void (*wlr_scene_buffer_iterator_func_t)(
+	struct wlr_scene_buffer *buffer, int sx, int sy, void *user_data);
+
 enum wlr_scene_node_type {
-	WLR_SCENE_NODE_ROOT,
 	WLR_SCENE_NODE_TREE,
-	WLR_SCENE_NODE_SURFACE,
 	WLR_SCENE_NODE_RECT,
 	WLR_SCENE_NODE_BUFFER,
 };
@@ -48,19 +59,36 @@ struct wlr_scene_node_state {
 /** A node is an object in the scene. */
 struct wlr_scene_node {
 	enum wlr_scene_node_type type;
-	struct wlr_scene_node *parent;
-	struct wlr_scene_node_state state;
+	struct wlr_scene_tree *parent;
+
+	struct wl_list link;
+	bool enabled;
+	int x, y; // relative to parent
 
 	struct {
 		struct wl_signal destroy;
 	} events;
 
 	void *data;
+	struct wlr_addon_set addons;
+};
+
+enum wlr_scene_debug_damage_option {
+	WLR_SCENE_DEBUG_DAMAGE_NONE,
+	WLR_SCENE_DEBUG_DAMAGE_RERENDER,
+	WLR_SCENE_DEBUG_DAMAGE_HIGHLIGHT
+};
+
+/** A sub-tree in the scene-graph. */
+struct wlr_scene_tree {
+	struct wlr_scene_node node;
+
+	struct wl_list children; // wlr_scene_node.link
 };
 
 /** The root scene-graph node. */
 struct wlr_scene {
-	struct wlr_scene_node node;
+	struct wlr_scene_tree tree;
 
 	struct wl_list outputs; // wlr_scene_output.link
 
@@ -69,30 +97,24 @@ struct wlr_scene {
 	// May be NULL
 	struct wlr_presentation *presentation;
 	struct wl_listener presentation_destroy;
+	enum wlr_scene_debug_damage_option debug_damage_option;
 };
 
-/** A sub-tree in the scene-graph. */
-struct wlr_scene_tree {
-	struct wlr_scene_node node;
-};
+
 
 /** A scene-graph node displaying a single surface. */
 struct wlr_scene_surface {
-	struct wlr_scene_node node;
+	struct wlr_scene_buffer *buffer;
 	struct wlr_surface *surface;
-
-	/**
-	 * The output that the largest area of this surface is displayed on.
-	 * This may be NULL if the surface is not currently displayed on any
-	 * outputs. This is the output that should be used for frame callbacks,
-	 * presentation feedback, etc.
-	 */
-	struct wlr_output *primary_output;
 
 	// private state
 
-	int prev_width, prev_height;
+	struct wlr_addon addon;
 
+	struct wl_listener output_enter;
+	struct wl_listener output_leave;
+	struct wl_listener output_present;
+	struct wl_listener frame_done;
 	struct wl_listener surface_destroy;
 	struct wl_listener surface_commit;
 };
@@ -107,10 +129,31 @@ struct wlr_scene_rect {
 /** A scene-graph node displaying a buffer */
 struct wlr_scene_buffer {
 	struct wlr_scene_node node;
+
+	// May be NULL
 	struct wlr_buffer *buffer;
+
+	struct {
+		struct wl_signal output_enter; // struct wlr_scene_output
+		struct wl_signal output_leave; // struct wlr_scene_output
+		struct wl_signal output_present; // struct wlr_scene_output
+		struct wl_signal frame_done; // struct timespec
+	} events;
+
+	// May be NULL
+	wlr_scene_buffer_point_accepts_input_func_t point_accepts_input;
+
+	/**
+	 * The output that the largest area of this buffer is displayed on.
+	 * This may be NULL if the buffer is not currently displayed on any
+	 * outputs. This is the output that should be used for frame callbacks,
+	 * presentation feedback, etc.
+	 */
+	struct wlr_scene_output *primary_output;
 
 	// private state
 
+	uint64_t active_outputs;
 	struct wlr_texture *texture;
 	struct wlr_fbox src_box;
 	int dst_width, dst_height;
@@ -124,18 +167,30 @@ struct wlr_scene_output {
 	struct wlr_scene *scene;
 	struct wlr_addon addon;
 
-	struct wlr_output_damage *damage;
+	struct wlr_damage_ring damage_ring;
 
 	int x, y;
 
+	struct {
+		struct wl_signal destroy;
+	} events;
+
 	// private state
 
+	uint8_t index;
 	bool prev_scanout;
+
+	struct wl_listener output_commit;
+	struct wl_listener output_mode;
+	struct wl_listener output_damage;
+	struct wl_listener output_needs_frame;
+
+	struct wl_list damage_highlight_regions;
 };
 
 /** A layer shell scene helper */
 struct wlr_scene_layer_surface_v1 {
-	struct wlr_scene_node *node;
+	struct wlr_scene_tree *tree;
 	struct wlr_layer_surface_v1 *layer_surface;
 
 	// private state
@@ -186,7 +241,7 @@ void wlr_scene_node_lower_to_bottom(struct wlr_scene_node *node);
  * Move the node to another location in the tree.
  */
 void wlr_scene_node_reparent(struct wlr_scene_node *node,
-	struct wlr_scene_node *new_parent);
+	struct wlr_scene_tree *new_parent);
 /**
  * Get the node's layout-local coordinates.
  *
@@ -198,8 +253,8 @@ bool wlr_scene_node_coords(struct wlr_scene_node *node, int *lx, int *ly);
  * position in layout coordinates. The function is called from root to leaves
  * (in rendering order).
  */
-void wlr_scene_node_for_each_surface(struct wlr_scene_node *node,
-	wlr_surface_iterator_func_t iterator, void *user_data);
+void wlr_scene_node_for_each_buffer(struct wlr_scene_node *node,
+	wlr_scene_buffer_iterator_func_t iterator, void *user_data);
 /**
  * Find the topmost node in this scene-graph that contains the point at the
  * given layout-local coordinates. (For surface nodes, this means accepting
@@ -233,7 +288,7 @@ void wlr_scene_set_presentation(struct wlr_scene *scene,
 /**
  * Add a node displaying nothing but its children.
  */
-struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_node *parent);
+struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_tree *parent);
 
 /**
  * Add a node displaying a single surface to the scene-graph.
@@ -244,15 +299,15 @@ struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_node *parent);
  * automatically based on the position of the surface and outputs in
  * the scene.
  */
-struct wlr_scene_surface *wlr_scene_surface_create(struct wlr_scene_node *parent,
+struct wlr_scene_surface *wlr_scene_surface_create(struct wlr_scene_tree *parent,
 	struct wlr_surface *surface);
 
-struct wlr_scene_surface *wlr_scene_surface_from_node(struct wlr_scene_node *node);
+struct wlr_scene_buffer *wlr_scene_buffer_from_node(struct wlr_scene_node *node);
 
 /**
  * Add a node displaying a solid-colored rectangle to the scene-graph.
  */
-struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_node *parent,
+struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
 		int width, int height, const float color[static 4]);
 
 /**
@@ -268,8 +323,25 @@ void wlr_scene_rect_set_color(struct wlr_scene_rect *rect, const float color[sta
 /**
  * Add a node displaying a buffer to the scene-graph.
  */
-struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_node *parent,
+struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_tree *parent,
 	struct wlr_buffer *buffer);
+
+/**
+ * Sets the buffer's backing buffer.
+ *
+ * If the buffer is NULL, the buffer node will not be displayed.
+ */
+void wlr_scene_buffer_set_buffer(struct wlr_scene_buffer *scene_buffer,
+	struct wlr_buffer *buffer);
+
+/**
+ * Sets the buffer's backing buffer with a custom damage region.
+ *
+ * The damage region is in buffer-local coordinates. If the region is NULL,
+ * the whole buffer node will be damaged.
+ */
+void wlr_scene_buffer_set_buffer_with_damage(struct wlr_scene_buffer *scene_buffer,
+	struct wlr_buffer *buffer, pixman_region32_t *region);
 
 /**
  * Set the source rectangle describing the region of the buffer which will be
@@ -295,6 +367,12 @@ void wlr_scene_buffer_set_dest_size(struct wlr_scene_buffer *scene_buffer,
  */
 void wlr_scene_buffer_set_transform(struct wlr_scene_buffer *scene_buffer,
 	enum wl_output_transform transform);
+
+/**
+ * Calls the buffer's frame_done signal.
+ */
+void wlr_scene_buffer_send_frame_done(struct wlr_scene_buffer *scene_buffer,
+	struct timespec *now);
 
 /**
  * Add a viewport for the specified output to the scene-graph.
@@ -328,8 +406,8 @@ void wlr_scene_output_send_frame_done(struct wlr_scene_output *scene_output,
  * with the surface's position in layout coordinates. The function is called
  * from root to leaves (in rendering order).
  */
-void wlr_scene_output_for_each_surface(struct wlr_scene_output *scene_output,
-	wlr_surface_iterator_func_t iterator, void *user_data);
+void wlr_scene_output_for_each_buffer(struct wlr_scene_output *scene_output,
+	wlr_scene_buffer_iterator_func_t iterator, void *user_data);
 /**
  * Get a scene-graph output from a wlr_output.
  *
@@ -351,8 +429,8 @@ bool wlr_scene_attach_output_layout(struct wlr_scene *scene,
  * Add a node displaying a surface and all of its sub-surfaces to the
  * scene-graph.
  */
-struct wlr_scene_node *wlr_scene_subsurface_tree_create(
-	struct wlr_scene_node *parent, struct wlr_surface *surface);
+struct wlr_scene_tree *wlr_scene_subsurface_tree_create(
+	struct wlr_scene_tree *parent, struct wlr_surface *surface);
 
 /**
  * Add a node displaying an xdg_surface and all of its sub-surfaces to the
@@ -361,8 +439,8 @@ struct wlr_scene_node *wlr_scene_subsurface_tree_create(
  * The origin of the returned scene-graph node will match the top-left corner
  * of the xdg_surface window geometry.
  */
-struct wlr_scene_node *wlr_scene_xdg_surface_create(
-	struct wlr_scene_node *parent, struct wlr_xdg_surface *xdg_surface);
+struct wlr_scene_tree *wlr_scene_xdg_surface_create(
+	struct wlr_scene_tree *parent, struct wlr_xdg_surface *xdg_surface);
 
 /**
  * Add a node displaying a layer_surface_v1 and all of its sub-surfaces to the
@@ -372,7 +450,7 @@ struct wlr_scene_node *wlr_scene_xdg_surface_create(
  * of the layer surface.
  */
 struct wlr_scene_layer_surface_v1 *wlr_scene_layer_surface_v1_create(
-	struct wlr_scene_node *parent, struct wlr_layer_surface_v1 *layer_surface);
+	struct wlr_scene_tree *parent, struct wlr_layer_surface_v1 *layer_surface);
 
 /**
  * Configure a layer_surface_v1, position its scene node in accordance to its

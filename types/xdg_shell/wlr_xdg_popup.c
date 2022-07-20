@@ -4,6 +4,41 @@
 #include "types/wlr_xdg_shell.h"
 #include "util/signal.h"
 
+void handle_xdg_popup_ack_configure(
+		struct wlr_xdg_popup *popup,
+		struct wlr_xdg_popup_configure *configure) {
+	popup->pending.geometry = configure->geometry;
+	popup->pending.reactive = configure->rules.reactive;
+}
+
+struct wlr_xdg_popup_configure *send_xdg_popup_configure(
+		struct wlr_xdg_popup *popup) {
+	struct wlr_xdg_popup_configure *configure =
+		calloc(1, sizeof(*configure));
+	if (configure == NULL) {
+		wl_resource_post_no_memory(popup->resource);
+		return NULL;
+	}
+	*configure = popup->scheduled;
+
+	uint32_t version = wl_resource_get_version(popup->resource);
+
+	if ((configure->fields & WLR_XDG_POPUP_CONFIGURE_REPOSITION_TOKEN) &&
+			version >= XDG_POPUP_REPOSITIONED_SINCE_VERSION) {
+		xdg_popup_send_repositioned(popup->resource,
+			configure->reposition_token);
+	}
+
+	struct wlr_box *geometry = &configure->geometry;
+	xdg_popup_send_configure(popup->resource,
+		geometry->x, geometry->y,
+		geometry->width, geometry->height);
+
+	popup->scheduled.fields = 0;
+
+	return configure;
+}
+
 static void xdg_popup_grab_end(struct wlr_xdg_popup_grab *popup_grab) {
 	struct wlr_xdg_popup *popup, *tmp;
 	wl_list_for_each_safe(popup, tmp, &popup_grab->popups, grab_link) {
@@ -214,7 +249,9 @@ void handle_xdg_popup_committed(struct wlr_xdg_popup *popup) {
 	if (!popup->committed) {
 		wlr_xdg_surface_schedule_configure(popup->base);
 		popup->committed = true;
+		return;
 	}
+	popup->current = popup->pending;
 }
 
 static const struct xdg_popup_interface xdg_popup_implementation;
@@ -267,6 +304,29 @@ static void xdg_popup_handle_grab(struct wl_client *client,
 		&popup_grab->touch_grab);
 }
 
+static void xdg_popup_handle_reposition(
+		struct wl_client *client, struct wl_resource *resource,
+		struct wl_resource *positioner_resource, uint32_t token) {
+	struct wlr_xdg_popup *popup =
+		wlr_xdg_popup_from_resource(resource);
+	if (!popup) {
+		return;
+	}
+
+	struct wlr_xdg_positioner *positioner =
+		wlr_xdg_positioner_from_resource(positioner_resource);
+	wlr_xdg_positioner_rules_get_geometry(
+		&positioner->rules, &popup->scheduled.geometry);
+	popup->scheduled.rules = positioner->rules;
+
+	popup->scheduled.fields |= WLR_XDG_POPUP_CONFIGURE_REPOSITION_TOKEN;
+	popup->scheduled.reposition_token = token;
+
+	wlr_xdg_surface_schedule_configure(popup->base);
+
+	wlr_signal_emit_safe(&popup->events.reposition, NULL);
+}
+
 static void xdg_popup_handle_destroy(struct wl_client *client,
 		struct wl_resource *resource) {
 	struct wlr_xdg_popup *popup =
@@ -285,6 +345,7 @@ static void xdg_popup_handle_destroy(struct wl_client *client,
 static const struct xdg_popup_interface xdg_popup_implementation = {
 	.destroy = xdg_popup_handle_destroy,
 	.grab = xdg_popup_handle_grab,
+	.reposition = xdg_popup_handle_reposition,
 };
 
 static void xdg_popup_handle_resource_destroy(struct wl_resource *resource) {
@@ -348,10 +409,11 @@ void create_xdg_popup(struct wlr_xdg_surface *surface,
 
 	surface->role = WLR_XDG_SURFACE_ROLE_POPUP;
 
-	memcpy(&surface->popup->scheduled.rules,
-		&positioner->rules, sizeof(positioner->rules));
 	wlr_xdg_positioner_rules_get_geometry(
-		&positioner->rules, &surface->popup->current.geometry);
+		&positioner->rules, &surface->popup->scheduled.geometry);
+	surface->popup->scheduled.rules = positioner->rules;
+
+	wl_signal_init(&surface->popup->events.reposition);
 
 	if (parent) {
 		surface->popup->parent = parent->surface;
@@ -444,5 +506,6 @@ void wlr_xdg_popup_unconstrain_from_box(struct wlr_xdg_popup *popup,
 		.height = toplevel_space_box->height,
 	};
 	wlr_xdg_positioner_rules_unconstrain_box(&popup->scheduled.rules,
-		&popup_constraint, &popup->current.geometry);
+		&popup_constraint, &popup->scheduled.geometry);
+	wlr_xdg_surface_schedule_configure(popup->base);
 }

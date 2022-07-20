@@ -56,9 +56,14 @@ struct wlr_xdg_positioner_rules {
 	enum xdg_positioner_gravity gravity;
 	enum xdg_positioner_constraint_adjustment constraint_adjustment;
 
+	bool reactive;
+
+	bool has_parent_configure_serial;
+	uint32_t parent_configure_serial;
+
 	struct {
 		int32_t width, height;
-	} size;
+	} size, parent_size;
 
 	struct {
 		int32_t x, y;
@@ -77,13 +82,17 @@ struct wlr_xdg_popup_state {
 	bool reactive;
 };
 
+enum wlr_xdg_popup_configure_field {
+	WLR_XDG_POPUP_CONFIGURE_REPOSITION_TOKEN = 1 << 0,
+};
+
 struct wlr_xdg_popup_configure {
+	uint32_t fields; // enum wlr_xdg_popup_configure_field
 	struct wlr_box geometry;
 	struct wlr_xdg_positioner_rules rules;
-
-	bool has_reposition_token;
 	uint32_t reposition_token;
 };
+
 struct wlr_xdg_popup {
 	struct wlr_xdg_surface *base;
 	struct wl_list link;
@@ -96,7 +105,11 @@ struct wlr_xdg_popup {
 	struct wlr_xdg_popup_configure scheduled;
 
 	struct wlr_xdg_popup_state current, pending;
-	
+
+	struct {
+		struct wl_signal reposition;
+	} events;
+
 	struct wl_list grab_link; // wlr_xdg_popup_grab::popups
 };
 
@@ -126,10 +139,18 @@ struct wlr_xdg_toplevel_state {
 	uint32_t min_width, min_height;
 };
 
+enum wlr_xdg_toplevel_configure_field {
+	WLR_XDG_TOPLEVEL_CONFIGURE_BOUNDS = 1 << 0,
+};
+
 struct wlr_xdg_toplevel_configure {
+	uint32_t fields; // enum wlr_xdg_toplevel_configure_field
 	bool maximized, fullscreen, resizing, activated;
 	uint32_t tiled; // enum wlr_edges
 	uint32_t width, height;
+	struct {
+		uint32_t width, height;
+	} bounds;
 };
 
 struct wlr_xdg_toplevel_requested {
@@ -177,7 +198,10 @@ struct wlr_xdg_surface_configure {
 	struct wl_list link; // wlr_xdg_surface::configure_list
 	uint32_t serial;
 
-	struct wlr_xdg_toplevel_configure *toplevel_configure;
+	union {
+		struct wlr_xdg_toplevel_configure *toplevel_configure;
+		struct wlr_xdg_popup_configure *popup_configure;
+	};
 };
 
 struct wlr_xdg_surface_state {
@@ -349,6 +373,13 @@ uint32_t wlr_xdg_toplevel_set_resizing(struct wlr_xdg_toplevel *toplevel,
  */
 uint32_t wlr_xdg_toplevel_set_tiled(struct wlr_xdg_toplevel *toplevel,
 		uint32_t tiled_edges);
+
+/**
+ * Configure the recommended bounds for the client's window geometry size.
+ * Returns the associated configure serial.
+ */
+uint32_t wlr_xdg_toplevel_set_bounds(struct wlr_xdg_toplevel *toplevel,
+		int32_t width, int32_t height);
 
 /**
  * Request that this toplevel closes.

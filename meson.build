@@ -15,7 +15,7 @@ project(
 # necessary for bugfix releases. Increasing soversion is required because
 # wlroots never guarantees ABI stability -- only API stability is guaranteed
 # between minor releases.
-soversion = 11
+soversion = 11032
 
 little_endian = host_machine.endian() == 'little'
 big_endian = host_machine.endian() == 'big'

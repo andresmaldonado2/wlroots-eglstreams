@@ -29,7 +29,7 @@ struct wlr_swapchain {
 
 struct wlr_swapchain *wlr_swapchain_create(
 	struct wlr_allocator *alloc, int width, int height,
-	const struct wlr_drm_format *format, void *backend_data);
+	const struct wlr_drm_format *format);
 void wlr_swapchain_destroy(struct wlr_swapchain *swapchain);
 /**
  * Acquire a buffer from the swap chain.

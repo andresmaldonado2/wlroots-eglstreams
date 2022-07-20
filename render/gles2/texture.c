@@ -15,6 +15,7 @@
 #include "render/egl.h"
 #include "render/gles2.h"
 #include "render/pixel_format.h"
+#include "types/wlr_buffer.h"
 #include "util/signal.h"
 
 static struct wlr_texture *gles2_texture_from_wl_eglstream(struct wlr_buffer *buffer);
@@ -218,6 +219,11 @@ static struct wlr_texture *gles2_texture_from_pixels(
 	texture->target = GL_TEXTURE_2D;
 	texture->has_alpha = fmt->has_alpha;
 	texture->drm_format = fmt->drm_format;
+
+	GLint internal_format = fmt->gl_internalformat;
+	if (!internal_format) {
+		internal_format = fmt->gl_format;
+	}
 
 	struct wlr_egl_context prev_ctx;
 	wlr_egl_save_context(&prev_ctx);

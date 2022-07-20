@@ -152,7 +152,7 @@ struct wlr_xdg_shell *wlr_xdg_shell_create(struct wl_display *display, uint32_t 
 	wl_list_init(&xdg_shell->popup_grabs);
 
 	struct wl_global *global = wl_global_create(display,
-		&xdg_wm_base_interface, WM_BASE_VERSION, xdg_shell, xdg_shell_bind);
+		&xdg_wm_base_interface, version, xdg_shell, xdg_shell_bind);
 	if (!global) {
 		free(xdg_shell);
 		return NULL;

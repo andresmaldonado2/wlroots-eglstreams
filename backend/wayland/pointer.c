@@ -401,14 +401,17 @@ const struct wlr_pointer_impl wl_pointer_impl = {
 };
 
 static void destroy_pointer(struct wlr_wl_pointer *pointer) {
-		if (pointer->output->cursor.pointer == pointer) {
-			pointer->output->cursor.pointer = NULL;
-		}
-
-		wlr_pointer_finish(&pointer->wlr_pointer);
-		wl_list_remove(&pointer->output_destroy.link);
-		wl_list_remove(&pointer->link);
-		free(pointer);
+	if (pointer->output->cursor.pointer == pointer) {
+		pointer->output->cursor.pointer = NULL;
+	}
+	if (pointer->seat->active_pointer == pointer) {
+		pointer->seat->active_pointer = NULL;
+	}
+	
+	wlr_pointer_finish(&pointer->wlr_pointer);
+	wl_list_remove(&pointer->output_destroy.link);
+	wl_list_remove(&pointer->link);
+	free(pointer);
 }
 
 static void pointer_output_destroy(struct wl_listener *listener, void *data) {

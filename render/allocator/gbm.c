@@ -229,8 +229,7 @@ static void allocator_destroy(struct wlr_allocator *wlr_alloc) {
 
 static struct wlr_buffer *allocator_create_buffer(
 		struct wlr_allocator *wlr_alloc, int width, int height,
-		const struct wlr_drm_format *format, void *data) {
-	(void)data; // Unused here
+		const struct wlr_drm_format *format) {
 	struct wlr_gbm_allocator *alloc = get_gbm_alloc_from_alloc(wlr_alloc);
 	struct wlr_gbm_buffer *buffer = create_buffer(alloc, width, height, format);
 	if (buffer == NULL) {

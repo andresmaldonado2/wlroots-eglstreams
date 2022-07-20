@@ -122,9 +122,7 @@ struct wlr_output {
 
 	char *name;
 	char *description; // may be NULL
-	char make[56];
-	char model[16];
-	char serial[16];
+	char *make, *model, *serial; 
 	int32_t phys_width, phys_height; // mm
 
 	// Note: some backends may have zero modes
@@ -207,6 +205,7 @@ struct wlr_output_event_damage {
 struct wlr_output_event_precommit {
 	struct wlr_output *output;
 	struct timespec *when;
+	const struct wlr_output_state *state;
 };
 
 struct wlr_output_event_commit {
@@ -427,6 +426,10 @@ bool wlr_output_commit(struct wlr_output *output);
  * Discard the pending output state.
  */
 void wlr_output_rollback(struct wlr_output *output);
+bool wlr_output_test_state(struct wlr_output *output,
+	const struct wlr_output_state *state);
+bool wlr_output_commit_state(struct wlr_output *output,
+	const struct wlr_output_state *state);
 /**
  * Manually schedules a `frame` event. If a `frame` event is already pending,
  * it is a no-op.
@@ -495,10 +498,29 @@ bool wlr_output_cursor_set_image(struct wlr_output_cursor *cursor,
 	int32_t hotspot_x, int32_t hotspot_y);
 void wlr_output_cursor_set_surface(struct wlr_output_cursor *cursor,
 	struct wlr_surface *surface, int32_t hotspot_x, int32_t hotspot_y);
+bool wlr_output_cursor_set_buffer(struct wlr_output_cursor *cursor,
+	struct wlr_buffer *buffer, int32_t hotspot_x, int32_t hotspot_y);
 bool wlr_output_cursor_move(struct wlr_output_cursor *cursor,
 	double x, double y);
 void wlr_output_cursor_destroy(struct wlr_output_cursor *cursor);
 
+
+
+void wlr_output_state_set_enabled(struct wlr_output_state *state,
+	bool enabled);
+void wlr_output_state_set_mode(struct wlr_output_state *state,
+	struct wlr_output_mode *mode);
+void wlr_output_state_set_custom_mode(struct wlr_output_state *state,
+	int32_t width, int32_t height, int32_t refresh);
+void wlr_output_state_set_scale(struct wlr_output_state *state, float scale);
+void wlr_output_state_set_transform(struct wlr_output_state *state,
+	enum wl_output_transform transform);
+void wlr_output_state_set_adaptive_sync_enabled(struct wlr_output_state *state,
+	bool enabled);
+void wlr_output_state_set_render_format(struct wlr_output_state *state,
+	uint32_t format);
+void wlr_output_state_set_subpixel(struct wlr_output_state *state,
+	enum wl_output_subpixel subpixel);
 
 /**
  * Returns the transform that, when composed with `tr`, gives

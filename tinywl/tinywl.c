@@ -73,18 +73,21 @@ struct tinywl_output {
 	struct tinywl_server *server;
 	struct wlr_output *wlr_output;
 	struct wl_listener frame;
+	struct wl_listener destroy;
 };
 
 struct tinywl_view {
 	struct wl_list link;
 	struct tinywl_server *server;
 	struct wlr_xdg_toplevel *xdg_toplevel;
-	struct wlr_scene_node *scene_node;
+	struct wlr_scene_tree *scene_tree;
 	struct wl_listener map;
 	struct wl_listener unmap;
 	struct wl_listener destroy;
 	struct wl_listener request_move;
 	struct wl_listener request_resize;
+	struct wl_listener request_maximize;
+	struct wl_listener request_fullscreen;
 	int x, y;
 };
 
@@ -123,7 +126,7 @@ static void focus_view(struct tinywl_view *view, struct wlr_surface *surface) {
 	}
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
 	/* Move the view to the front */
-	wlr_scene_node_raise_to_top(view->scene_node);
+	wlr_scene_node_raise_to_top(&view->scene_tree->node);
 	wl_list_remove(&view->link);
 	wl_list_insert(&server->views, &view->link);
 	/* Activate the new surface */
@@ -133,8 +136,10 @@ static void focus_view(struct tinywl_view *view, struct wlr_surface *surface) {
 	 * track of this and automatically send key events to the appropriate
 	 * clients without additional work on your part.
 	 */
-	wlr_seat_keyboard_notify_enter(seat, view->xdg_toplevel->base->surface,
-		keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+	if (keyboard != NULL) {
+		wlr_seat_keyboard_notify_enter(seat, view->xdg_toplevel->base->surface,
+			keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+	}
 }
 
 static void keyboard_handle_modifiers(
@@ -233,10 +238,11 @@ static void keyboard_handle_destroy(struct wl_listener *listener, void *data) {
 
 static void server_new_keyboard(struct tinywl_server *server,
 		struct wlr_input_device *device) {
+	struct wlr_keyboard *wlr_keyboard = wlr_keyboard_from_input_device(device);
 	struct tinywl_keyboard *keyboard =
 		calloc(1, sizeof(struct tinywl_keyboard));
 	keyboard->server = server;
-	keyboard->wlr_keyboard = device->keyboard;
+	keyboard->wlr_keyboard = wlr_keyboard;
 
 	/* We need to prepare an XKB keymap and assign it to the keyboard. This
 	 * assumes the defaults (e.g. layout = "us"). */
@@ -244,16 +250,16 @@ static void server_new_keyboard(struct tinywl_server *server,
 	struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, NULL,
 		XKB_KEYMAP_COMPILE_NO_FLAGS);
 
-	wlr_keyboard_set_keymap(device->keyboard, keymap);
+	wlr_keyboard_set_keymap(wlr_keyboard, keymap);
 	xkb_keymap_unref(keymap);
 	xkb_context_unref(context);
-	wlr_keyboard_set_repeat_info(device->keyboard, 25, 600);
+	wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600);
 
 	/* Here we set up listeners for keyboard events. */
 	keyboard->modifiers.notify = keyboard_handle_modifiers;
-	wl_signal_add(&device->keyboard->events.modifiers, &keyboard->modifiers);
+	wl_signal_add(&wlr_keyboard->events.modifiers, &keyboard->modifiers);
 	keyboard->key.notify = keyboard_handle_key;
-	wl_signal_add(&device->keyboard->events.key, &keyboard->key);
+	wl_signal_add(&wlr_keyboard->events.key, &keyboard->key);
 	keyboard->destroy.notify = keyboard_handle_destroy;
 	wl_signal_add(&device->events.destroy, &keyboard->destroy);
 
@@ -335,17 +341,27 @@ static struct tinywl_view *desktop_view_at(
 	 * we only care about surface nodes as we are specifically looking for a
 	 * surface in the surface tree of a tinywl_view. */
 	struct wlr_scene_node *node = wlr_scene_node_at(
-		&server->scene->node, lx, ly, sx, sy);
-	if (node == NULL || node->type != WLR_SCENE_NODE_SURFACE) {
+		&server->scene->tree.node, lx, ly, sx, sy);
+	if (node == NULL || node->type != WLR_SCENE_NODE_BUFFER) {
 		return NULL;
 	}
-	*surface = wlr_scene_surface_from_node(node)->surface;
+
+	struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
+	struct wlr_scene_surface *scene_surface =
+		wlr_scene_surface_from_buffer(scene_buffer);
+	if (!scene_surface) {
+		return NULL;
+	}
+
+	*surface = scene_surface->surface;
+
 	/* Find the node corresponding to the tinywl_view at the root of this
 	 * surface tree, it is the only one for which we set the data field. */
-	while (node != NULL && node->data == NULL) {
-		node = node->parent;
+	struct wlr_scene_tree *tree = node->parent;
+	while (tree != NULL && tree->node.data == NULL) {
+		tree = tree->node.parent;
 	}
-	return node->data;
+	return tree->node.data;
 }
 
 static void process_cursor_move(struct tinywl_server *server, uint32_t time) {
@@ -353,7 +369,7 @@ static void process_cursor_move(struct tinywl_server *server, uint32_t time) {
 	struct tinywl_view *view = server->grabbed_view;
 	view->x = server->cursor->x - server->grab_x;
 	view->y = server->cursor->y - server->grab_y;
-	wlr_scene_node_set_position(view->scene_node, view->x, view->y);
+	wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
 }
 
 static void process_cursor_resize(struct tinywl_server *server, uint32_t time) {
@@ -402,7 +418,7 @@ static void process_cursor_resize(struct tinywl_server *server, uint32_t time) {
 	wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo_box);
 	view->x = new_left - geo_box.x;
 	view->y = new_top - geo_box.y;
-	wlr_scene_node_set_position(view->scene_node, view->x, view->y);
+	wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
 
 	int new_width = new_right - new_left;
 	int new_height = new_bottom - new_top;
@@ -547,6 +563,15 @@ static void output_frame(struct wl_listener *listener, void *data) {
 	wlr_scene_output_send_frame_done(scene_output, &now);
 }
 
+static void output_destroy(struct wl_listener *listener, void *data) {
+	struct tinywl_output *output = wl_container_of(listener, output, destroy);
+
+	wl_list_remove(&output->frame.link);
+	wl_list_remove(&output->destroy.link);
+	wl_list_remove(&output->link);
+	free(output);
+}
+
 static void server_new_output(struct wl_listener *listener, void *data) {
 	/* This event is raised by the backend when a new output (aka a display or
 	 * monitor) becomes available. */
@@ -580,6 +605,11 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	/* Sets up a listener for the frame notify event. */
 	output->frame.notify = output_frame;
 	wl_signal_add(&wlr_output->events.frame, &output->frame);
+
+	/* Sets up a listener for the destroy notify event. */
+	output->destroy.notify = output_destroy;
+	wl_signal_add(&wlr_output->events.destroy, &output->destroy);
+
 	wl_list_insert(&server->outputs, &output->link);
 
 	/* Adds this to the output layout. The add_auto function arranges outputs
@@ -619,6 +649,8 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
 	wl_list_remove(&view->destroy.link);
 	wl_list_remove(&view->request_move.link);
 	wl_list_remove(&view->request_resize.link);
+	wl_list_remove(&view->request_maximize.link);
+	wl_list_remove(&view->request_fullscreen.link);
 
 	free(view);
 }
@@ -684,6 +716,26 @@ static void xdg_toplevel_request_resize(
 	begin_interactive(view, TINYWL_CURSOR_RESIZE, event->edges);
 }
 
+static void xdg_toplevel_request_maximize(
+		struct wl_listener *listener, void *data) {
+	/* This event is raised when a client would like to maximize itself,
+	 * typically because the user clicked on the maximize button on
+	 * client-side decorations. tinywl doesn't support maximization, but
+	 * to conform to xdg-shell protocol we still must send a configure.
+	 * wlr_xdg_surface_schedule_configure() is used to send an empty reply. */
+	struct tinywl_view *view =
+		wl_container_of(listener, view, request_maximize);
+	wlr_xdg_surface_schedule_configure(view->xdg_toplevel->base);
+}
+
+static void xdg_toplevel_request_fullscreen(
+		struct wl_listener *listener, void *data) {
+	/* Just as with request_maximize, we must send a configure here. */
+	struct tinywl_view *view =
+		wl_container_of(listener, view, request_fullscreen);
+	wlr_xdg_surface_schedule_configure(view->xdg_toplevel->base);
+}
+
 static void server_new_xdg_surface(struct wl_listener *listener, void *data) {
 	/* This event is raised when wlr_xdg_shell receives a new xdg surface from a
 	 * client, either a toplevel (application window) or popup. */
@@ -699,9 +751,9 @@ static void server_new_xdg_surface(struct wl_listener *listener, void *data) {
 	if (xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP) {
 		struct wlr_xdg_surface *parent = wlr_xdg_surface_from_wlr_surface(
 			xdg_surface->popup->parent);
-		struct wlr_scene_node *parent_node = parent->data;
+		struct wlr_scene_tree *parent_tree = parent->data;
 		xdg_surface->data = wlr_scene_xdg_surface_create(
-			parent_node, xdg_surface);
+			parent_tree, xdg_surface);
 		return;
 	}
 	assert(xdg_surface->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL);
@@ -711,10 +763,10 @@ static void server_new_xdg_surface(struct wl_listener *listener, void *data) {
 		calloc(1, sizeof(struct tinywl_view));
 	view->server = server;
 	view->xdg_toplevel = xdg_surface->toplevel;
-	view->scene_node = wlr_scene_xdg_surface_create(
-			&view->server->scene->node, view->xdg_toplevel->base);
-	view->scene_node->data = view;
-	xdg_surface->data = view->scene_node;
+	view->scene_tree = wlr_scene_xdg_surface_create(
+			&view->server->scene->tree, view->xdg_toplevel->base);
+	view->scene_tree->node.data = view;
+	xdg_surface->data = view->scene_tree;
 
 	/* Listen to the various events it can emit */
 	view->map.notify = xdg_toplevel_map;
@@ -730,6 +782,12 @@ static void server_new_xdg_surface(struct wl_listener *listener, void *data) {
 	wl_signal_add(&toplevel->events.request_move, &view->request_move);
 	view->request_resize.notify = xdg_toplevel_request_resize;
 	wl_signal_add(&toplevel->events.request_resize, &view->request_resize);
+	view->request_maximize.notify = xdg_toplevel_request_maximize;
+	wl_signal_add(&toplevel->events.request_maximize,
+		&view->request_maximize);
+	view->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
+	wl_signal_add(&toplevel->events.request_fullscreen,
+		&view->request_fullscreen);
 }
 
 int main(int argc, char *argv[]) {
@@ -761,12 +819,21 @@ int main(int argc, char *argv[]) {
 	 * backend based on the current environment, such as opening an X11 window
 	 * if an X11 server is running. */
 	server.backend = wlr_backend_autocreate(server.wl_display);
+	if (server.backend == NULL) {
+		wlr_log(WLR_ERROR, "failed to create wlr_backend");
+		return 1;
+	}
 
 	/* Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The user
 	 * can also specify a renderer using the WLR_RENDERER env var.
 	 * The renderer is responsible for defining the various pixel formats it
 	 * supports for shared memory, this configures that for clients. */
 	server.renderer = wlr_renderer_autocreate(server.backend);
+	if (server.renderer == NULL) {
+		wlr_log(WLR_ERROR, "failed to create wlr_renderer");
+		return 1;
+	}
+
 	wlr_renderer_init_wl_display(server.renderer, server.wl_display);
 
 	/* Autocreates an allocator for us.
@@ -775,6 +842,10 @@ int main(int argc, char *argv[]) {
 	 * screen */
 	 server.allocator = wlr_allocator_autocreate(server.backend,
 		server.renderer);
+	if (server.allocator == NULL) {
+		wlr_log(WLR_ERROR, "failed to create wlr_allocator");
+		return 1;
+	}
 
 	/* This creates some hands-off wlroots interfaces. The compositor is
 	 * necessary for clients to allocate surfaces, the subcompositor allows to

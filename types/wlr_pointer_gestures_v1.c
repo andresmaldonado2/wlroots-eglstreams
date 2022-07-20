@@ -52,13 +52,14 @@ void wlr_pointer_gestures_v1_send_swipe_begin(
 		uint32_t time_msec,
 		uint32_t fingers) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	if (focus == NULL) {
+	struct wlr_seat_client *focus_seat_client =
+		seat->pointer_state.focused_client;
+	if (focus == NULL || focus_seat_client == NULL) {
 		return;
 	}
 
-	struct wl_client *focus_client = wl_resource_get_client(focus->resource);
-	uint32_t serial = wlr_seat_client_next_serial(
-		seat->pointer_state.focused_client);
+	struct wl_client *focus_client = focus_seat_client->client;
+	uint32_t serial = wlr_seat_client_next_serial(focus_seat_client);
 
 	struct wl_resource *gesture;
 	wl_resource_for_each(gesture, &gestures->swipes) {
@@ -79,11 +80,13 @@ void wlr_pointer_gestures_v1_send_swipe_update(
 		double dx,
 		double dy) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	if (focus == NULL) {
+	struct wlr_seat_client *focus_seat_client =
+		seat->pointer_state.focused_client;
+	if (focus == NULL || focus_seat_client == NULL) {
 		return;
 	}
 
-	struct wl_client *focus_client = wl_resource_get_client(focus->resource);
+	struct wl_client *focus_client = focus_seat_client->client;
 
 	struct wl_resource *gesture;
 	wl_resource_for_each(gesture, &gestures->swipes) {
@@ -103,13 +106,14 @@ void wlr_pointer_gestures_v1_send_swipe_end(
 		uint32_t time_msec,
 		bool cancelled) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	if (focus == NULL) {
+	struct wlr_seat_client *focus_seat_client =
+		seat->pointer_state.focused_client;
+	if (focus == NULL || focus_seat_client == NULL) {
 		return;
 	}
 
-	struct wl_client *focus_client = wl_resource_get_client(focus->resource);
-	uint32_t serial = wlr_seat_client_next_serial(
-		seat->pointer_state.focused_client);
+	struct wl_client *focus_client = focus_seat_client->client;
+	uint32_t serial = wlr_seat_client_next_serial(focus_seat_client);
 
 	struct wl_resource *gesture;
 	wl_resource_for_each(gesture, &gestures->swipes) {
@@ -164,13 +168,14 @@ void wlr_pointer_gestures_v1_send_pinch_begin(
 		uint32_t time_msec,
 		uint32_t fingers) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	if (focus == NULL) {
+	struct wlr_seat_client *focus_seat_client =
+		seat->pointer_state.focused_client;
+	if (focus == NULL || focus_seat_client == NULL) {
 		return;
 	}
 
-	struct wl_client *focus_client = wl_resource_get_client(focus->resource);
-	uint32_t serial = wlr_seat_client_next_serial(
-		seat->pointer_state.focused_client);
+	struct wl_client *focus_client = focus_seat_client->client;
+	uint32_t serial = wlr_seat_client_next_serial(focus_seat_client);
 
 	struct wl_resource *gesture;
 	wl_resource_for_each(gesture, &gestures->pinches) {
@@ -193,11 +198,13 @@ void wlr_pointer_gestures_v1_send_pinch_update(
 		double scale,
 		double rotation) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	if (focus == NULL) {
+	struct wlr_seat_client *focus_seat_client =
+		seat->pointer_state.focused_client;
+	if (focus == NULL  || focus_seat_client == NULL) {
 		return;
 	}
 
-	struct wl_client *focus_client = wl_resource_get_client(focus->resource);
+	struct wl_client *focus_client = focus_seat_client->client;
 
 	struct wl_resource *gesture;
 	wl_resource_for_each(gesture, &gestures->pinches) {
@@ -219,13 +226,14 @@ void wlr_pointer_gestures_v1_send_pinch_end(
 		uint32_t time_msec,
 		bool cancelled) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	if (focus == NULL) {
+	struct wlr_seat_client *focus_seat_client =
+		seat->pointer_state.focused_client;
+	if (focus == NULL || focus_seat_client == NULL) {
 		return;
 	}
 
-	struct wl_client *focus_client = wl_resource_get_client(focus->resource);
-	uint32_t serial = wlr_seat_client_next_serial(
-		seat->pointer_state.focused_client);
+	struct wl_client *focus_client = focus_seat_client->client;
+	uint32_t serial = wlr_seat_client_next_serial(focus_seat_client);
 
 	struct wl_resource *gesture;
 	wl_resource_for_each(gesture, &gestures->pinches) {
@@ -285,13 +293,15 @@ void wlr_pointer_gestures_v1_send_hold_begin(
 		uint32_t time_msec,
 		uint32_t fingers) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	if (focus == NULL) {
+	struct wlr_surface *focus = seat->pointer_state.focused_surface;
+	struct wlr_seat_client *focus_seat_client =
+		seat->pointer_state.focused_client;
+	if (focus == NULL || focus_seat_client == NULL) {
 		return;
 	}
 
-	struct wl_client *focus_client = wl_resource_get_client(focus->resource);
-	uint32_t serial = wlr_seat_client_next_serial(
-		seat->pointer_state.focused_client);
+	struct wl_client *focus_client = focus_seat_client->client;
+	uint32_t serial = wlr_seat_client_next_serial(focus_seat_client);
 
 	struct wl_resource *gesture;
 	wl_resource_for_each(gesture, &gestures->holds) {
@@ -311,13 +321,14 @@ void wlr_pointer_gestures_v1_send_hold_end(
 		uint32_t time_msec,
 		bool cancelled) {
 	struct wlr_surface *focus = seat->pointer_state.focused_surface;
-	if (focus == NULL) {
+	struct wlr_seat_client *focus_seat_client =
+		seat->pointer_state.focused_client;
+	if (focus == NULL || focus_seat_client == NULL) {
 		return;
 	}
 
-	struct wl_client *focus_client = wl_resource_get_client(focus->resource);
-	uint32_t serial = wlr_seat_client_next_serial(
-		seat->pointer_state.focused_client);
+	struct wl_client *focus_client = focus_seat_client->client;
+	uint32_t serial = wlr_seat_client_next_serial(focus_seat_client);
 
 	struct wl_resource *gesture;
 	wl_resource_for_each(gesture, &gestures->holds) {

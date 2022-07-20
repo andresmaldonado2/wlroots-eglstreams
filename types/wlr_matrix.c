@@ -4,6 +4,7 @@
 #include <wlr/types/wlr_matrix.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/util/box.h>
+#include "types/wlr_matrix.h"
 
 void wlr_matrix_identity(float mat[static 9]) {
 	static const float identity[9] = {
@@ -118,7 +119,7 @@ void wlr_matrix_transform(float mat[static 9],
 }
 
 // Equivalent to glOrtho(0, width, 0, height, 1, -1) with the transform applied
-void wlr_matrix_projection(float mat[static 9], int width, int height,
+void matrix_projection(float mat[static 9], int width, int height,
 		enum wl_output_transform transform) {
 	memset(mat, 0, sizeof(*mat) * 9);
 

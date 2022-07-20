@@ -40,16 +40,18 @@ static struct screencopy_damage *screencopy_damage_find(
 	return NULL;
 }
 
-static void screencopy_damage_accumulate(struct screencopy_damage *damage) {
+static void screencopy_damage_accumulate(struct screencopy_damage *damage, 
+		const struct wlr_output_state *state) {
 	struct pixman_region32 *region = &damage->damage;
 	struct wlr_output *output = damage->output;
 
-	if (output->pending.committed & WLR_OUTPUT_STATE_DAMAGE) {
+	if (state->committed & WLR_OUTPUT_STATE_DAMAGE) {
 		// If the compositor submitted damage, copy it over
-		pixman_region32_union(region, region, &output->pending.damage);
+		pixman_region32_union(region, region, 
+			(pixman_region32_t *) &state->damage);
 		pixman_region32_intersect_rect(region, region, 0, 0,
 			output->width, output->height);
-	} else if (output->pending.committed & WLR_OUTPUT_STATE_BUFFER) {
+	} else if (state->committed & WLR_OUTPUT_STATE_BUFFER) {
 		// If the compositor did not submit damage but did submit a buffer
 		// damage everything
 		pixman_region32_union_rect(region, region, 0, 0,
@@ -61,7 +63,8 @@ static void screencopy_damage_handle_output_precommit(
 		struct wl_listener *listener, void *data) {
 	struct screencopy_damage *damage =
 		wl_container_of(listener, damage, output_precommit);
-	screencopy_damage_accumulate(damage);
+	const struct wlr_output_event_precommit *event = data;
+	screencopy_damage_accumulate(damage, event->state);
 }
 
 static void screencopy_damage_destroy(struct screencopy_damage *damage) {
@@ -543,6 +546,13 @@ static void capture_output(struct wl_client *wl_client,
 		goto error;
 	}
 
+	const struct wlr_pixel_format_info *info = drm_get_pixel_format_info(drm_format);
+	if (!info) {
+		wlr_log(WLR_ERROR,
+			"Failed to capture output: no pixel format info matching read format");
+		goto error;
+	}
+
 	frame->format = convert_drm_format_to_wl_shm(drm_format);
 	if (output->allocator &&
 			(output->allocator->buffer_caps & WLR_BUFFER_CAP_DMABUF)) {
@@ -569,7 +579,7 @@ static void capture_output(struct wl_client *wl_client,
 	}
 
 	frame->box = buffer_box;
-	frame->stride = 4 * buffer_box.width; // TODO: depends on read format
+	frame->stride = (info->bpp / 8) * buffer_box.width;
 
 	zwlr_screencopy_frame_v1_send_buffer(frame->resource, frame->format,
 		buffer_box.width, buffer_box.height, frame->stride);

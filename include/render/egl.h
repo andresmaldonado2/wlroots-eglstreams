@@ -3,13 +3,6 @@
 
 #include <wlr/render/egl.h>
 
-struct wlr_egl_context {
-	EGLDisplay display;
-	EGLContext context;
-	EGLSurface draw_surface;
-	EGLSurface read_surface;
-};
-
 /**
  * Initializes an EGL context for the given DRM FD.
  *

@@ -32,12 +32,14 @@
 #include "util/signal.h"
 #include "wlr/render/egl.h"
 
-static const uint32_t SUPPORTED_OUTPUT_STATE =
-	WLR_OUTPUT_STATE_BACKEND_OPTIONAL |
+static const uint32_t COMMIT_OUTPUT_STATE =
 	WLR_OUTPUT_STATE_BUFFER |
 	WLR_OUTPUT_STATE_MODE |
 	WLR_OUTPUT_STATE_ENABLED |
 	WLR_OUTPUT_STATE_GAMMA_LUT;
+
+static const uint32_t SUPPORTED_OUTPUT_STATE =
+	WLR_OUTPUT_STATE_BACKEND_OPTIONAL | COMMIT_OUTPUT_STATE;
 
 static void handle_page_flip(int fd, unsigned seq,
 		unsigned tv_sec, unsigned tv_usec, unsigned crtc_id, void *data);
@@ -398,6 +400,7 @@ static bool drm_crtc_page_flip(struct wlr_drm_connector *conn,
 static void drm_connector_state_init(struct wlr_drm_connector_state *state,
 		struct wlr_drm_connector *conn,
 		const struct wlr_output_state *base) {
+	memset(state, 0, sizeof(*state));
 	state->base = base;
 	state->modeset = base->committed &
 		(WLR_OUTPUT_STATE_ENABLED | WLR_OUTPUT_STATE_MODE);
@@ -448,7 +451,7 @@ static bool drm_connector_set_pending_fb(struct wlr_drm_connector *conn,
 
 		// TODO: fallback to modifier-less buffer allocation
 		bool ok = init_drm_surface(&plane->mgpu_surf, &drm->mgpu_renderer,
-			state->buffer->width, state->buffer->height, format, plane);
+			state->buffer->width, state->buffer->height, format);
 		free(format);
 		if (!ok) {
 			return false;
@@ -476,24 +479,29 @@ static bool drm_connector_set_pending_fb(struct wlr_drm_connector *conn,
 
 static bool drm_connector_alloc_crtc(struct wlr_drm_connector *conn);
 
-static bool drm_connector_test(struct wlr_output *output) {
+static bool drm_connector_test(struct wlr_output *output, 
+		const struct wlr_output_state *state) {
 	struct wlr_drm_connector *conn = get_drm_connector_from_output(output);
 
 	if (!conn->backend->session->active) {
 		return false;
 	}
 
-	uint32_t unsupported = output->pending.committed & ~SUPPORTED_OUTPUT_STATE;
+	uint32_t unsupported = state->committed & ~SUPPORTED_OUTPUT_STATE;
 	if (unsupported != 0) {
 		wlr_log(WLR_DEBUG, "Unsupported output state fields: 0x%"PRIx32,
 			unsupported);
 		return false;
 	}
 
-	if ((output->pending.committed & WLR_OUTPUT_STATE_ENABLED) &&
-			output->pending.enabled) {
+	if ((state->committed & COMMIT_OUTPUT_STATE) == 0) {
+		// This commit doesn't change the KMS state
+		return true;
+	}
+
+	if ((state->committed & WLR_OUTPUT_STATE_ENABLED) && state->enabled) {
 		if (output->current_mode == NULL &&
-				!(output->pending.committed & WLR_OUTPUT_STATE_MODE)) {
+				!(state->committed & WLR_OUTPUT_STATE_MODE)) {
 			wlr_drm_conn_log(conn, WLR_DEBUG,
 				"Can't enable an output without a mode");
 			return false;
@@ -501,12 +509,12 @@ static bool drm_connector_test(struct wlr_output *output) {
 	}
 
 	struct wlr_drm_connector_state pending = {0};
-	drm_connector_state_init(&pending, conn, &output->pending);
+	drm_connector_state_init(&pending, conn, state);
 
 	if (pending.active) {
-		if ((output->pending.committed &
+		if ((state->committed &
 				(WLR_OUTPUT_STATE_ENABLED | WLR_OUTPUT_STATE_MODE)) &&
-				!(output->pending.committed & WLR_OUTPUT_STATE_BUFFER)) {
+				!(state->committed & WLR_OUTPUT_STATE_BUFFER)) {
 			wlr_drm_conn_log(conn, WLR_DEBUG,
 				"Can't enable an output without a buffer");
 			return false;
@@ -531,7 +539,7 @@ static bool drm_connector_test(struct wlr_output *output) {
 		return true;
 	}
 
-	if (output->pending.committed & WLR_OUTPUT_STATE_BUFFER) {
+	if (state->committed & WLR_OUTPUT_STATE_BUFFER) {
 		if (!drm_connector_set_pending_fb(conn, pending.base)) {
 			return false;
 		}
@@ -577,6 +585,11 @@ bool drm_connector_commit_state(struct wlr_drm_connector *conn,
 		return false;
 	}
 
+	if ((base->committed & COMMIT_OUTPUT_STATE) == 0) {
+		// This commit doesn't change the KMS state
+		return true;
+	}
+
 	struct wlr_drm_connector_state pending = {0};
 	drm_connector_state_init(&pending, conn, base);
 
@@ -614,14 +627,14 @@ bool drm_connector_commit_state(struct wlr_drm_connector *conn,
 	return true;
 }
 
-static bool drm_connector_commit(struct wlr_output *output) {
+static bool drm_connector_commit(struct wlr_output *output, const struct wlr_output_state *state) {
 	struct wlr_drm_connector *conn = get_drm_connector_from_output(output);
 
-	if (!drm_connector_test(output)) {
+	if (!drm_connector_test(output, state)) {
 		return false;
 	}
 
-	return drm_connector_commit_state(conn, &output->pending);
+	return drm_connector_commit_state(conn, state);
 }
 
 size_t drm_crtc_get_gamma_lut_size(struct wlr_drm_backend *drm,
@@ -829,7 +842,7 @@ static bool drm_connector_set_cursor(struct wlr_output *output,
 			}
 
 			bool ok = init_drm_surface(&plane->mgpu_surf, &drm->mgpu_renderer,
-				buffer->width, buffer->height, format, plane);
+				buffer->width, buffer->height, format);
 			free(format);
 			if (!ok) {
 				return false;
@@ -1332,10 +1345,18 @@ void scan_drm_connectors(struct wlr_drm_backend *drm,
 				wlr_conn->output.non_desktop = non_desktop;
 			}
 
+			wlr_conn->max_bpc = 0;
+			if (wlr_conn->props.max_bpc != 0) {
+				if (!introspect_drm_prop_range(drm->fd, wlr_conn->props.max_bpc,
+						NULL, &wlr_conn->max_bpc)) {
+					wlr_log(WLR_ERROR, "Failed to introspect 'max bpc' property");
+				}
+			}
+
 			size_t edid_len = 0;
 			uint8_t *edid = get_drm_prop_blob(drm->fd,
 				wlr_conn->id, wlr_conn->props.edid, &edid_len);
-			parse_edid(&wlr_conn->output, edid_len, edid);
+			parse_edid(wlr_conn, edid_len, edid);
 			free(edid);
 
 			char *subconnector = NULL;
@@ -1350,9 +1371,13 @@ void scan_drm_connectors(struct wlr_drm_backend *drm,
 
 			struct wlr_output *output = &wlr_conn->output;
 			char description[128];
-			snprintf(description, sizeof(description), "%s %s %s (%s%s%s)",
-				output->make, output->model, output->serial, output->name,
-				subconnector ? " via " : "", subconnector ? subconnector : "");
+			snprintf(description, sizeof(description), "%s %s%s%s (%s%s%s)",
+				output->make, output->model, 
+				output->serial ? " " : "",
+				output->serial ? output->serial : "", 
+				output->name,
+				subconnector ? " via " : "", 
+				subconnector ? subconnector : "");
 			wlr_output_set_description(output, description);
 
 			free(subconnector);

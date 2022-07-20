@@ -52,6 +52,15 @@ noreturn static void exec_xwayland(struct wlr_xwayland_server *server,
 	argv[i++] = "-terminate";
 	argv[i++] = "-core";
 
+#if HAVE_XWAYLAND_TERMINATE_DELAY
+	char terminate_delay[16];
+	if (server->options.terminate_delay > 0) {
+		snprintf(terminate_delay, sizeof(terminate_delay), "%d",
+			server->options.terminate_delay);
+		argv[i++] = terminate_delay;
+	}
+#endif
+
 #if HAVE_XWAYLAND_LISTENFD
 	argv[i++] = "-listenfd";
 	argv[i++] = listenfd0;
@@ -79,6 +88,14 @@ noreturn static void exec_xwayland(struct wlr_xwayland_server *server,
 	}
 #else
 	server->options.no_touch_pointer_emulation = false;
+#endif
+
+#if HAVE_XWAYLAND_FORCE_XRANDR_EMULATION
+	if (server->options.force_xrandr_emulation) {
+		argv[i++] = "-force-xrandr-emulation";
+	}
+#else
+	server->options.force_xrandr_emulation = false;
 #endif
 
 	argv[i++] = NULL;
@@ -435,6 +452,10 @@ struct wlr_xwayland_server *wlr_xwayland_server_create(
 
 	server->wl_display = wl_display;
 	server->options = *options;
+
+#if !HAVE_XWAYLAND_TERMINATE_DELAY
+	server->options.terminate_delay = 0;
+#endif
 
 	server->x_fd[0] = server->x_fd[1] = -1;
 	server->wl_fd[0] = server->wl_fd[1] = -1;

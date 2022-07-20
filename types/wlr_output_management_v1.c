@@ -767,13 +767,13 @@ static void manager_send_head(struct wlr_output_manager_v1 *manager,
 			output->phys_width, output->phys_height);
 	}
 
-	if (version >= ZWLR_OUTPUT_HEAD_V1_MAKE_SINCE_VERSION && output->make[0] != '\0') {
+	if (version >= ZWLR_OUTPUT_HEAD_V1_MAKE_SINCE_VERSION && output->make != NULL) {
 		zwlr_output_head_v1_send_make(head_resource, output->make);
 	}
-	if (version >= ZWLR_OUTPUT_HEAD_V1_MODEL_SINCE_VERSION && output->model[0] != '\0') {
+	if (version >= ZWLR_OUTPUT_HEAD_V1_MODEL_SINCE_VERSION && output->model != NULL) {
 		zwlr_output_head_v1_send_model(head_resource, output->model);
 	}
-	if (version >= ZWLR_OUTPUT_HEAD_V1_SERIAL_NUMBER_SINCE_VERSION && output->serial[0] != '\0') {
+	if (version >= ZWLR_OUTPUT_HEAD_V1_SERIAL_NUMBER_SINCE_VERSION && output->serial != NULL) {
 		zwlr_output_head_v1_send_serial_number(head_resource, output->serial);
 	}
 
@@ -906,4 +906,26 @@ void wlr_output_manager_v1_set_configuration(
 			manager->serial);
 	}
 	manager->current_configuration_dirty = false;
+}
+
+void wlr_output_head_v1_state_apply(
+		const struct wlr_output_head_v1_state *head_state,
+		struct wlr_output_state *output_state) {
+	wlr_output_state_set_enabled(output_state, head_state->enabled);
+
+	if (!head_state->enabled) {
+		return;
+	}
+
+	if (head_state->mode != NULL) {
+		wlr_output_state_set_mode(output_state, head_state->mode);
+	} else {
+		wlr_output_state_set_custom_mode(output_state,
+			head_state->custom_mode.width,
+			head_state->custom_mode.height,
+			head_state->custom_mode.refresh);
+	}
+
+	wlr_output_state_set_scale(output_state, head_state->scale);
+	wlr_output_state_set_transform(output_state, head_state->transform);
 }

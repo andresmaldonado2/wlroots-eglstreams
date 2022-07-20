@@ -20,6 +20,7 @@
 #include "render/pixel_format.h"
 #include "types/wlr_buffer.h"
 #include "backend/drm/drm.h"
+#include "types/wlr_matrix.h"
 
 static const GLfloat verts[] = {
 	1, 0, // top right
@@ -225,8 +226,8 @@ static void gles2_begin(struct wlr_renderer *wlr_renderer, uint32_t width,
 	renderer->viewport_height = height;
 
 	// refresh projection matrix
-	wlr_matrix_projection(renderer->projection, width, height,
-			WL_OUTPUT_TRANSFORM_NORMAL);
+	matrix_projection(renderer->projection, width, height,
+			WL_OUTPUT_TRANSFORM_FLIPPED_180);
 
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 

@@ -475,7 +475,7 @@ static ssize_t get_drm_format_set_index(const struct wlr_drm_format_set *set,
 			format_found = true;
 			break;
 		}
-		idx += 1 + fmt->len;
+		idx += fmt->len;
 	}
 	if (!format_found) {
 		return -1;
@@ -506,7 +506,7 @@ static struct wlr_linux_dmabuf_feedback_v1_compiled *feedback_compile(
 	size_t table_len = 0;
 	for (size_t i = 0; i < fallback_tranche->formats->len; i++) {
 		const struct wlr_drm_format *fmt = fallback_tranche->formats->formats[i];
-		table_len += 1 + fmt->len;
+		table_len += fmt->len;
 	}
 	assert(table_len > 0);
 

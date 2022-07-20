@@ -98,15 +98,10 @@ static void relative_pointer_manager_v1_handle_destroy(struct wl_client *client,
 
 static void relative_pointer_manager_v1_handle_get_relative_pointer(struct wl_client *client,
 		struct wl_resource *resource, uint32_t id, struct wl_resource *pointer) {
+	struct wlr_relative_pointer_manager_v1 *manager =
+		relative_pointer_manager_from_resource(resource);
 	struct wlr_seat_client *seat_client =
 		wlr_seat_client_from_pointer_resource(pointer);
-
-	struct wlr_relative_pointer_v1 *relative_pointer =
-		calloc(1, sizeof(struct wlr_relative_pointer_v1));
-	if (relative_pointer == NULL) {
-		wl_client_post_no_memory(client);
-		return;
-	}
 
 	struct wl_resource *relative_pointer_resource = wl_resource_create(client,
 		&zwp_relative_pointer_v1_interface, wl_resource_get_version(resource), id);
@@ -116,24 +111,39 @@ static void relative_pointer_manager_v1_handle_get_relative_pointer(struct wl_cl
 		return;
 	}
 
+	wlr_log(WLR_DEBUG, "relative_pointer_v1 %p created for client %p",
+		relative_pointer, client);
+
+
+	wl_resource_set_implementation(relative_pointer_resource, &relative_pointer_v1_impl,
+		NULL, relative_pointer_v1_handle_resource_destroy);
+
+	if (seat_client == NULL) {
+		// Leave the resource inert
+		return;
+	}
+
+	struct wlr_relative_pointer_v1 *relative_pointer =
+		calloc(1, sizeof(struct wlr_relative_pointer_v1));
+	if (relative_pointer == NULL) {
+		wl_client_post_no_memory(client);
+		return;
+	}
+
 	relative_pointer->resource = relative_pointer_resource;
 	relative_pointer->seat = seat_client->seat;
 	relative_pointer->pointer_resource = pointer;
 
-	wl_signal_init(&relative_pointer->events.destroy);
-
-	wl_resource_set_implementation(relative_pointer_resource, &relative_pointer_v1_impl,
-		relative_pointer, relative_pointer_v1_handle_resource_destroy);
-
-	struct wlr_relative_pointer_manager_v1 *manager =
-		relative_pointer_manager_from_resource(resource);
-
-	wl_list_insert(&manager->relative_pointers,
-			&relative_pointer->link);
-
 	wl_signal_add(&relative_pointer->seat->events.destroy,
 			&relative_pointer->seat_destroy);
 	relative_pointer->seat_destroy.notify = relative_pointer_handle_seat_destroy;
+
+	wl_signal_init(&relative_pointer->events.destroy);
+
+	wl_resource_set_user_data(relative_pointer_resource, relative_pointer);
+
+	wl_list_insert(&manager->relative_pointers,
+			&relative_pointer->link);
 
 	wl_resource_add_destroy_listener(relative_pointer->pointer_resource,
 			&relative_pointer->pointer_destroy);
@@ -142,8 +152,8 @@ static void relative_pointer_manager_v1_handle_get_relative_pointer(struct wl_cl
 	wlr_signal_emit_safe(&manager->events.new_relative_pointer,
 		relative_pointer);
 
-	wlr_log(WLR_DEBUG, "relative_pointer_v1 %p created for client %p",
-		relative_pointer, client);
+	wl_resource_set_implementation(relative_pointer_resource, &relative_pointer_v1_impl,
+		relative_pointer, relative_pointer_v1_handle_resource_destroy);
 }
 
 
@@ -230,7 +240,7 @@ void wlr_relative_pointer_manager_v1_send_relative_motion(
 	wl_list_for_each(pointer, &manager->relative_pointers, link) {
 		struct wlr_seat_client *seat_client =
 			wlr_seat_client_from_pointer_resource(pointer->pointer_resource);
-		if (seat != pointer->seat || focused != seat_client) {
+		if (!pointer->seat || seat != pointer->seat || focused != seat_client) {
 			continue;
 		}
 

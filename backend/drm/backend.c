@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <drm_fourcc.h>
+#include <libudev.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,6 +59,7 @@ static void backend_destroy(struct wlr_backend *backend) {
 
 	finish_drm_resources(drm);
 
+	udev_hwdb_unref(drm->hwdb);
 	free(drm->name);
 	wlr_session_close_file(drm->session, drm->dev);
 	wl_event_source_remove(drm->drm_event);
@@ -172,6 +174,23 @@ static void handle_parent_destroy(struct wl_listener *listener, void *data) {
 	backend_destroy(&drm->backend);
 }
 
+static struct udev_hwdb *create_udev_hwdb(void) {
+	struct udev *udev = udev_new();
+	if (!udev) {
+		wlr_log(WLR_ERROR, "udev_new failed");
+		return NULL;
+	}
+
+	struct udev_hwdb *hwdb = udev_hwdb_new(udev);
+	udev_unref(udev);
+	if (!hwdb) {
+		wlr_log(WLR_ERROR, "udev_hwdb_new failed");
+		return NULL;
+	}
+
+	return hwdb;
+}
+
 struct wlr_backend *wlr_drm_backend_create(struct wl_display *display,
 		struct wlr_session *session, struct wlr_device *dev,
 		struct wlr_backend *parent) {
@@ -227,6 +246,12 @@ struct wlr_backend *wlr_drm_backend_create(struct wl_display *display,
 	drm->session_active.notify = handle_session_active;
 	wl_signal_add(&session->events.active, &drm->session_active);
 
+	drm->hwdb = create_udev_hwdb();
+	if (!drm->hwdb) {
+		wlr_log(WLR_INFO, "Failed to load udev_hwdb, "
+			"falling back to PnP IDs instead of manufacturer names");
+	}
+
 	if (!check_drm_features(drm)) {
 		goto error_event;
 	}
@@ -258,8 +283,13 @@ struct wlr_backend *wlr_drm_backend_create(struct wl_display *display,
 		// to implicit modifiers.
 		for (size_t i = 0; i < texture_formats->len; i++) {
 			const struct wlr_drm_format *fmt = texture_formats->formats[i];
-			wlr_drm_format_set_add(&drm->mgpu_formats, fmt->format,
-				DRM_FORMAT_MOD_LINEAR);
+			for (size_t j = 0; j < fmt->len; j++) {
+				uint64_t mod = fmt->modifiers[j];
+				if (mod == DRM_FORMAT_MOD_INVALID) {
+					continue;
+				}
+				wlr_drm_format_set_add(&drm->mgpu_formats, fmt->format, mod);
+			}
 		}
 	}
 
@@ -276,6 +306,7 @@ error_mgpu_renderer:
 error_resources:
 	finish_drm_resources(drm);
 error_event:
+	udev_hwdb_unref(drm->hwdb);
 	wl_list_remove(&drm->session_active.link);
 	wl_event_source_remove(drm->drm_event);
 error_fd:

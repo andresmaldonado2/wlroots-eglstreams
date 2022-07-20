@@ -8,6 +8,7 @@
 #include <wlr/util/log.h>
 #include "render/allocator/allocator.h"
 #include "render/swapchain.h"
+#include "types/wlr_buffer.h"
 #include "types/wlr_output.h"
 #include "util/signal.h"
 
@@ -272,7 +273,7 @@ static struct wlr_buffer *render_cursor_buffer(struct wlr_output_cursor *cursor)
 
 		wlr_swapchain_destroy(output->cursor_swapchain);
 		output->cursor_swapchain = wlr_swapchain_create(allocator,
-			width, height, format, NULL);
+			width, height, format);
 		free(format);
 		if (output->cursor_swapchain == NULL) {
 			wlr_log(WLR_ERROR, "Failed to create cursor swapchain");
@@ -375,28 +376,50 @@ static bool output_cursor_attempt_hardware(struct wlr_output_cursor *cursor) {
 bool wlr_output_cursor_set_image(struct wlr_output_cursor *cursor,
 		const uint8_t *pixels, int32_t stride, uint32_t width, uint32_t height,
 		int32_t hotspot_x, int32_t hotspot_y) {
+	struct wlr_buffer *buffer = NULL;
+
+	if (pixels) {
+		struct wlr_readonly_data_buffer *ro_buffer = readonly_data_buffer_create(
+			DRM_FORMAT_ARGB8888, stride, width, height, pixels);
+		if (ro_buffer == NULL) {
+			return false;
+		}
+		buffer = &ro_buffer->base;
+	}
+	bool ok = wlr_output_cursor_set_buffer(cursor, buffer, hotspot_x, hotspot_y);
+
+	wlr_buffer_drop(buffer);
+	return ok;
+}
+
+bool wlr_output_cursor_set_buffer(struct wlr_output_cursor *cursor,
+		struct wlr_buffer *buffer, int32_t hotspot_x, int32_t hotspot_y) {
 	struct wlr_renderer *renderer = cursor->output->renderer;
 	if (!renderer) {
-		// if the backend has no renderer, we can't draw a cursor, but this is
-		// actually okay, for ex. with the noop backend
-		return true;
+		return false;
 	}
 
 	output_cursor_reset(cursor);
 
-	cursor->width = width;
-	cursor->height = height;
+	if (buffer != NULL) {
+		cursor->width = buffer->width;
+		cursor->height = buffer->height;
+	} else {
+		cursor->width = 0;
+		cursor->height = 0;
+	}
+
 	cursor->hotspot_x = hotspot_x;
 	cursor->hotspot_y = hotspot_y;
+
 	output_cursor_update_visible(cursor);
 
 	wlr_texture_destroy(cursor->texture);
 	cursor->texture = NULL;
 
 	cursor->enabled = false;
-	if (pixels != NULL) {
-		cursor->texture = wlr_texture_from_pixels(renderer,
-			DRM_FORMAT_ARGB8888, stride, width, height, pixels);
+	if (buffer != NULL) {
+		cursor->texture = wlr_texture_from_buffer(renderer, buffer);
 		if (cursor->texture == NULL) {
 			return false;
 		}

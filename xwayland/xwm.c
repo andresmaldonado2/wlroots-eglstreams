@@ -662,17 +662,13 @@ static void read_surface_hints(struct wlr_xwm *xwm,
 		return;
 	}
 
-	xcb_icccm_wm_hints_t hints;
-	xcb_icccm_get_wm_hints_from_reply(&hints, reply);
-
 	free(xsurface->hints);
-	xsurface->hints = calloc(1, sizeof(struct wlr_xwayland_surface_hints));
+	xsurface->hints = calloc(1, sizeof(xcb_icccm_wm_hints_t));
 	if (xsurface->hints == NULL) {
 		return;
 	}
 
-	memcpy(xsurface->hints, &hints, sizeof(struct wlr_xwayland_surface_hints));
-	xsurface->hints_urgency = xcb_icccm_wm_hints_get_urgency(&hints);
+	xcb_icccm_get_wm_hints_from_reply(xsurface->hints, reply);
 
 	if (!(xsurface->hints->flags & XCB_ICCCM_WM_HINT_INPUT)) {
 		// The client didn't specify whether it wants input.
@@ -690,20 +686,16 @@ static void read_surface_normal_hints(struct wlr_xwm *xwm,
 		return;
 	}
 
-	xcb_size_hints_t size_hints;
-	xcb_icccm_get_wm_size_hints_from_reply(&size_hints, reply);
-
 	free(xsurface->size_hints);
-	xsurface->size_hints =
-		calloc(1, sizeof(struct wlr_xwayland_surface_size_hints));
+	xsurface->size_hints = calloc(1, sizeof(xcb_size_hints_t));
 	if (xsurface->size_hints == NULL) {
 		return;
 	}
-	memcpy(xsurface->size_hints, &size_hints,
-		sizeof(struct wlr_xwayland_surface_size_hints));
+	xcb_icccm_get_wm_size_hints_from_reply(xsurface->size_hints, reply);
 
-	bool has_min_size_hints = (size_hints.flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) != 0;
-	bool has_base_size_hints = (size_hints.flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE) != 0;
+	int32_t flags = xsurface->size_hints->flags;
+	bool has_min_size_hints = (flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) != 0;
+	bool has_base_size_hints = (flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE) != 0;
 	/* ICCCM says that if absent, min size is equal to base size and vice versa */
 	if (!has_min_size_hints && !has_base_size_hints) {
 		xsurface->size_hints->min_width = -1;
@@ -718,7 +710,7 @@ static void read_surface_normal_hints(struct wlr_xwm *xwm,
 		xsurface->size_hints->min_height = xsurface->size_hints->base_height;
 	}
 
-	if ((size_hints.flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE) == 0) {
+	if ((flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE) == 0) {
 		xsurface->size_hints->max_width = -1;
 		xsurface->size_hints->max_height = -1;
 	}
@@ -1852,7 +1844,8 @@ static void xwm_get_resources(struct wlr_xwm *xwm) {
 
 	wlr_log(WLR_DEBUG, "xfixes version: %" PRIu32 ".%" PRIu32,
 		xfixes_reply->major_version, xfixes_reply->minor_version);
-
+	xwm->xfixes_major_version = xfixes_reply->major_version;
+ 
 	free(xfixes_reply);
 
 	const xcb_query_extension_reply_t *xres =
@@ -2112,6 +2105,14 @@ struct wlr_xwm *xwm_create(struct wlr_xwayland *xwayland, int wm_fd) {
 		32,
 		sizeof(supported)/sizeof(*supported),
 		supported);
+
+#if HAS_XCB_XFIXES_SET_CLIENT_DISCONNECT_MODE
+	if (xwm->xwayland->server->options.terminate_delay > 0 &&
+			xwm->xfixes_major_version >= 6) {
+		xcb_xfixes_set_client_disconnect_mode(xwm->xcb_conn,
+			XCB_XFIXES_CLIENT_DISCONNECT_FLAGS_TERMINATE);
+	}
+#endif
 
 	xcb_flush(xwm->xcb_conn);
 

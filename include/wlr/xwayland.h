@@ -15,6 +15,7 @@
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_seat.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_icccm.h>
 
 struct wlr_xwm;
 struct wlr_xwayland_cursor;
@@ -23,6 +24,8 @@ struct wlr_xwayland_server_options {
 	bool lazy;
 	bool enable_wm;
 	bool no_touch_pointer_emulation;
+	bool force_xrandr_emulation;
+	int terminate_delay; // in seconds, 0 to terminate immediately
 };
 
 struct wlr_xwayland_server {
@@ -176,9 +179,8 @@ struct wlr_xwayland_surface {
 	size_t protocols_len;
 
 	uint32_t decorations;
-	struct wlr_xwayland_surface_hints *hints;
-	uint32_t hints_urgency;
-	struct wlr_xwayland_surface_size_hints *size_hints;
+	xcb_icccm_wm_hints_t *hints;
+	xcb_size_hints_t *size_hints;
 
 	bool pinging;
 	struct wl_event_source *ping_timer;

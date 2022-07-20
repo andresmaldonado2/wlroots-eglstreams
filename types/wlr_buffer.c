@@ -17,6 +17,8 @@ void wlr_buffer_init(struct wlr_buffer *buffer,
 	if (impl->begin_data_ptr_access || impl->end_data_ptr_access) {
 		assert(impl->begin_data_ptr_access && impl->end_data_ptr_access);
 	}
+
+	memset(buffer, 0, sizeof(*buffer));
 	buffer->impl = impl;
 	buffer->width = width;
 	buffer->height = height;
@@ -63,7 +65,7 @@ void wlr_buffer_unlock(struct wlr_buffer *buffer) {
 	buffer->n_locks--;
 
 	if (buffer->n_locks == 0) {
-		wl_signal_emit(&buffer->events.release, NULL);
+		wlr_signal_emit_safe(&buffer->events.release, NULL);
 	}
 
 	buffer_consider_destroy(buffer);
@@ -196,9 +198,8 @@ static const struct wlr_buffer_resource_interface *get_buffer_resource_iface(
 	return NULL;
 }
 
-struct wlr_buffer *wlr_buffer_from_resource(struct wl_resource *resource,
-	struct wlr_renderer *renderer) {
-	assert(resource && renderer && wlr_resource_is_buffer(resource));
+struct wlr_buffer *wlr_buffer_from_resource(struct wl_resource *resource) {
+	assert(resource && wlr_resource_is_buffer(resource));
 
 	struct wlr_buffer *buffer;
 	if (wl_shm_buffer_get(resource) != NULL) {
@@ -237,6 +238,32 @@ struct wlr_buffer *wlr_buffer_from_resource(struct wl_resource *resource,
 	}
 
 	return buffer;
+}
+
+bool buffer_is_opaque(struct wlr_buffer *buffer) {
+	void *data;
+	uint32_t format;
+	size_t stride;
+	struct wlr_dmabuf_attributes dmabuf;
+	struct wlr_shm_attributes shm;
+	if (wlr_buffer_get_dmabuf(buffer, &dmabuf)) {
+		format = dmabuf.format;
+	} else if (wlr_buffer_get_shm(buffer, &shm)) {
+		format = shm.format;
+	} else if (wlr_buffer_begin_data_ptr_access(buffer,
+			WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride)) {
+		wlr_buffer_end_data_ptr_access(buffer);
+	} else {
+		return false;
+	}
+
+	const struct wlr_pixel_format_info *format_info =
+		drm_get_pixel_format_info(format);
+	if (format_info == NULL) {
+		return false;
+	}
+
+	return !format_info->has_alpha;
 }
 
 struct wlr_client_buffer *wlr_client_buffer_create(struct wlr_buffer *buffer,

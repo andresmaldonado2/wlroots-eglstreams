@@ -10,6 +10,7 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/util/log.h>
 #include <wlr/util/region.h>
+#include "types/wlr_buffer.h"
 #include "types/wlr_region.h"
 #include "util/signal.h"
 #include "util/time.h"
@@ -45,7 +46,7 @@ static void surface_handle_attach(struct wl_client *client,
 
 	struct wlr_buffer *buffer = NULL;
 	if (buffer_resource != NULL) {
-		buffer = wlr_buffer_from_resource(buffer_resource, surface->renderer);
+		buffer = wlr_buffer_from_resource(buffer_resource);
 		if (buffer == NULL) {
 			wl_resource_post_error(buffer_resource, 0, "unknown buffer type");
 			return;
@@ -179,9 +180,18 @@ static void surface_finalize_pending(struct wlr_surface *surface) {
 		// TODO: send WL_SURFACE_ERROR_INVALID_SIZE error once this issue is
 		// resolved:
 		// https://gitlab.freedesktop.org/wayland/wayland/-/issues/194
-		wlr_log(WLR_DEBUG, "Client bug: submitted a buffer whose size (%dx%d) "
-			"is not divisible by scale (%d)", pending->buffer_width,
-			pending->buffer_height, pending->scale);
+		if (!surface->role
+				|| strcmp(surface->role->name, "wl_pointer-cursor") == 0
+				|| strcmp(surface->role->name, "wp_tablet_tool-cursor") == 0) {
+			wlr_log(WLR_DEBUG, "Client bug: submitted a buffer whose size (%dx%d) "
+				"is not divisible by scale (%d)", pending->buffer_width,
+				pending->buffer_height, pending->scale);
+		} else {
+			wl_resource_post_error(surface->resource,
+				WL_SURFACE_ERROR_INVALID_SIZE,
+				"Buffer size (%dx%d) is not divisible by scale (%d)",
+				pending->buffer_width, pending->buffer_height, pending->scale);
+		}
 	}
 
 	if (pending->viewport.has_dst) {
@@ -327,8 +337,11 @@ static void surface_apply_damage(struct wlr_surface *surface) {
 			wlr_buffer_unlock(&surface->buffer->base);
 		}
 		surface->buffer = NULL;
+		surface->opaque = false;
 		return;
 	}
+
+	surface->opaque = buffer_is_opaque(surface->current.buffer);
 
 	if (surface->buffer != NULL) {
 		if (wlr_client_buffer_apply_damage(surface->buffer,
@@ -363,7 +376,7 @@ static void surface_update_opaque_region(struct wlr_surface *surface) {
 		return;
 	}
 
-	if (wlr_texture_is_opaque(texture)) {
+	if (surface->opaque) {
 		pixman_region32_init_rect(&surface->opaque_region,
 			0, 0, surface->current.width, surface->current.height);
 		return;
@@ -583,6 +596,7 @@ struct wlr_surface *wlr_surface_from_resource(struct wl_resource *resource) {
 }
 
 static void surface_state_init(struct wlr_surface_state *state) {
+	memset(state, 0, sizeof(*state));
 	state->scale = 1;
 	state->transform = WL_OUTPUT_TRANSFORM_NORMAL;
 

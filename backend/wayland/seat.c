@@ -259,7 +259,9 @@ void destroy_wl_seats(struct wlr_wl_backend *wl) {
 		}
 		if (seat->wl_keyboard) {
 			wl_keyboard_release(seat->wl_keyboard);
-			wlr_keyboard_finish(&seat->wlr_keyboard);
+			if (seat->backend->started) {
+				wlr_keyboard_finish(&seat->wlr_keyboard);
+			}
 		}
 		if (seat->zwp_tablet_seat_v2) {
 			finish_seat_tablet(seat);
@@ -277,15 +279,15 @@ void destroy_wl_seats(struct wlr_wl_backend *wl) {
 bool wlr_input_device_is_wl(struct wlr_input_device *dev) {
 	switch (dev->type) {
 	case WLR_INPUT_DEVICE_KEYBOARD:
-		return dev->keyboard->impl == &keyboard_impl;
+		return wlr_keyboard_from_input_device(dev)->impl == &keyboard_impl;
 	case WLR_INPUT_DEVICE_POINTER:
-		return dev->pointer->impl == &wl_pointer_impl;
+		return wlr_pointer_from_input_device(dev)->impl == &wl_pointer_impl;
 	case WLR_INPUT_DEVICE_TOUCH:
-		return dev->touch->impl == &touch_impl;
+		return wlr_touch_from_input_device(dev)->impl == &touch_impl;
 	case WLR_INPUT_DEVICE_TABLET_TOOL:
-		return dev->tablet->impl == &wl_tablet_impl;
+		return wlr_tablet_from_input_device(dev)->impl == &wl_tablet_impl;
 	case WLR_INPUT_DEVICE_TABLET_PAD:
-		return dev->tablet_pad->impl == &wl_tablet_pad_impl;
+		return wlr_tablet_pad_from_input_device(dev)->impl == &wl_tablet_pad_impl;
 	default:
 		return false;
 	}
