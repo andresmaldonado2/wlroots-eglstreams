@@ -237,7 +237,7 @@ static struct wlr_texture *gles2_texture_from_pixels(
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH_EXT, stride / (drm_fmt->bpp / 8));
-	glTexImage2D(GL_TEXTURE_2D, 0, fmt->gl_format, width, height, 0,
+	glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0,
 		fmt->gl_format, fmt->gl_type, data);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH_EXT, 0);
 

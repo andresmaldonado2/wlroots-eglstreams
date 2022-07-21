@@ -126,6 +126,10 @@ bool is_gles2_pixel_format_supported(const struct wlr_gles2_renderer *renderer,
 			&& !renderer->exts.OES_texture_half_float_linear) {
 		return false;
 	}
+	if (format->gl_type == GL_UNSIGNED_SHORT
+			&& !renderer->exts.EXT_texture_norm16) {
+		return false;
+	}
 	/*
 	 * Note that we don't need to check for GL_EXT_texture_format_BGRA8888
 	 * here, since we've already checked if we have it at renderer creation

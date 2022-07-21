@@ -157,10 +157,7 @@ static void destroy_imported(struct wlr_xdg_imported_v1 *imported) {
 	wl_list_for_each_safe(child, child_tmp, &imported->children, link) {
 		struct wlr_xdg_surface *xdg_child =
 			wlr_xdg_surface_from_wlr_surface(child->surface);
-
-		if (xdg_child != NULL) {
 			wlr_xdg_toplevel_set_parent(xdg_child->toplevel, NULL);
-		}
 	}
 
 	wl_list_remove(&imported->exported_destroyed.link);

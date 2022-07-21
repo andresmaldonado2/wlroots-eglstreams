@@ -94,7 +94,7 @@ features = {
 	'xwayland': false,
 	'gles2-renderer': false,
 	'vulkan-renderer': false,
-	'gbm-renderer': false,
+	'gbm-allocator': false,
 }
 internal_features = {
 	'xcb-errors': false,

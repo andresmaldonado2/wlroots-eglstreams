@@ -241,8 +241,8 @@ static void gles2_end(struct wlr_renderer *wlr_renderer) {
 	struct wlr_gles2_renderer *renderer = gles2_get_renderer_in_context(wlr_renderer);
 	if(!renderer->current_buffer || !renderer->current_buffer->egl_stream_texture)
 	{
+		gles2_get_renderer_in_context(wlr_renderer);
 		// no-op
-		return;
 	}
 
 	// Renders eglstream offscreen buffer
@@ -580,6 +580,10 @@ static bool gles2_read_pixels(struct wlr_renderer *wlr_renderer,
 
 	pop_gles2_debug(renderer);
 
+	if (flags != NULL) {
+		*flags = 0;
+	}
+
 	return glGetError() == GL_NO_ERROR;
 }
 
@@ -889,6 +893,9 @@ struct wlr_renderer *wlr_gles2_renderer_create(struct wlr_egl *egl) {
 	renderer->exts.OES_texture_half_float_linear =
 		check_gl_ext(exts_str, "GL_OES_texture_half_float_linear");
 
+	renderer->exts.EXT_texture_norm16 =
+		check_gl_ext(exts_str, "GL_EXT_texture_norm16");
+
 	if (check_gl_ext(exts_str, "GL_KHR_debug")) {
 		renderer->exts.KHR_debug = true;
 		load_gl_proc(&renderer->procs.glDebugMessageCallbackKHR,
@@ -932,6 +939,9 @@ struct wlr_renderer *wlr_gles2_renderer_create(struct wlr_egl *egl) {
 	renderer->shaders.quad.proj = glGetUniformLocation(prog, "proj");
 	renderer->shaders.quad.color = glGetUniformLocation(prog, "color");
 	renderer->shaders.quad.pos_attrib = glGetAttribLocation(prog, "pos");
+
+	// TODO Figure out if accounting for invert is necessary for eglstream or not
+	// May be able to stick with upstream and remove the inverts
 
 	if (!setup_shader(renderer, tex_vertex_src,
 				tex_fragment_src_rgba, &renderer->shaders.tex_rgba)) {

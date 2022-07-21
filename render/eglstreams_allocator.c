@@ -251,6 +251,6 @@ void wlr_eglstream_recreate_planes(struct wlr_allocator *wlr_alloc) {
 }
 
 static const struct wlr_allocator_interface allocator_impl = {
-	.destroy = allocator_destroy,
 	.create_buffer = jank_allocator_create_buffer,
+	.destroy = allocator_destroy,
 };
